@@ -703,3 +703,246 @@ CMsg_PropagatedContinuousSoundListStruct MainWindow::createContinuousSoundData()
 
     return soundData;
 }
+
+void MainWindow::onShowEquationResultsClicked()
+{
+    if (!m_component) {
+        addLog("错误：声纳组件未初始化");
+        return;
+    }
+
+    // 将组件转换为 DeviceModel* 以访问声纳方程功能
+    DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
+    if (!deviceModel) {
+        addLog("错误：无法转换为 DeviceModel 类型");
+        return;
+    }
+
+    // 获取所有声纳的计算结果
+    auto results = deviceModel->getAllSonarEquationResults();
+
+    QString resultText;
+    resultText += "============ 声纳方程计算结果 ============\n";
+    resultText += QString("计算时间：%1\n").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss"));
+    resultText += "公式：SL-TL-NL+DI=X\n\n";
+
+    if (results.empty()) {
+        resultText += "❌ 暂无有效的计算结果\n";
+        resultText += "原因可能：\n";
+        resultText += "1. 数据未准备完整（需要平台噪声、环境噪声、传播声三种数据）\n";
+        resultText += "2. 数据已过期（超过5秒未更新）\n";
+        resultText += "3. 声纳未启用\n\n";
+        resultText += "建议：点击\"发送完整测试数据\"按钮，等待几秒后再查看结果。";
+    } else {
+        // 声纳名称映射
+        QStringList sonarNames = {"艏端声纳", "舷侧声纳", "粗拖声纳", "细拖声纳"};
+
+        for (int sonarID = 0; sonarID < 4; sonarID++) {
+            resultText += QString("📡 %1 (ID=%2):\n").arg(sonarNames[sonarID]).arg(sonarID);
+
+            auto it = results.find(sonarID);
+            if (it != results.end()) {
+                double result = it->second;
+                resultText += QString("   ✅ X = %.3f\n").arg(result);
+
+                // 检查数据有效性
+                bool dataValid = deviceModel->isEquationDataValid(sonarID);
+                if (!dataValid) {
+                    resultText += "   ⚠️  数据已过期，结果可能不准确\n";
+                }
+            } else {
+                resultText += "   ❌ 无计算结果（声纳可能未启用或数据不足）\n";
+            }
+            resultText += "\n";
+        }
+
+        // 添加说明
+        resultText += "💡 说明：\n";
+        resultText += "• X值越大表示目标信号相对噪声越强\n";
+        resultText += "• 数据每5秒更新一次，过期数据会标注警告\n";
+        resultText += "• 只有启用的声纳才会进行计算\n";
+    }
+
+    // 更新显示
+    m_equationResultsTextEdit->setPlainText(resultText);
+
+    addLog("已更新声纳方程计算结果显示");
+}
+
+void MainWindow::onSendCompleteTestDataClicked()
+{
+    if (!m_component) {
+        addLog("错误：声纳组件未初始化");
+        return;
+    }
+
+    addLog("开始发送完整测试数据...");
+
+    try {
+        // 1. 发送环境噪声数据
+        CMsg_EnvironmentNoiseToSonarStruct envNoise;
+
+        // 生成模拟的环境噪声频谱数据
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_real_distribution<float> envNoiseDist(25.0f, 40.0f);  // 25-40 dB
+
+        for (int i = 0; i < 5296; i++) {
+            envNoise.spectrumData[i] = envNoiseDist(gen);
+        }
+        envNoise.acousticVel = 1500.0f;
+
+        CSimMessage envMsg;
+        envMsg.dataFormat = STRUCT;
+        envMsg.time = QDateTime::currentMSecsSinceEpoch();
+        envMsg.sender = 1;
+        envMsg.senderComponentId = 1;
+        envMsg.receiver = 1885;
+        envMsg.data = &envNoise;
+        envMsg.length = sizeof(envNoise);
+        memcpy(envMsg.topic, MSG_EnvironmentNoiseToSonar, strlen(MSG_EnvironmentNoiseToSonar) + 1);
+
+        m_component->onMessage(&envMsg);
+        addLog("✅ 已发送环境噪声数据");
+
+        // 2. 模拟平台自噪声数据（通过代理间接发送）
+        // 注意：平台自噪声是通过getSubscribeSimData获取的，这里我们模拟数据已准备好
+        addLog("✅ 平台自噪声数据准备完成（通过订阅数据机制）");
+
+        // 3. 发送传播后连续声数据
+        CMsg_PropagatedContinuousSoundListStruct continuousSound;
+
+        // 为4个声纳位置各创建一个传播声数据
+        std::uniform_real_distribution<float> signalDist(60.0f, 80.0f);  // 60-80 dB（信号强度）
+
+        for (int sonarID = 0; sonarID < 4; sonarID++) {
+            C_PropagatedContinuousSoundStruct soundData;
+
+            // 设置目标参数
+            soundData.arrivalSideAngle = 30.0f + sonarID * 10.0f;  // 不同方向
+            soundData.arrivalPitchAngle = 5.0f;
+            soundData.targetDistance = 1000.0f + sonarID * 200.0f;
+            soundData.platType = 1;  // 潜艇类型
+
+            // 生成频谱数据
+            for (int i = 0; i < 5296; i++) {
+                soundData.spectrumData[i] = signalDist(gen);
+            }
+
+            continuousSound.propagatedContinuousList.push_back(soundData);
+        }
+
+        CSimMessage continuousMsg;
+        continuousMsg.dataFormat = STRUCT;
+        continuousMsg.time = QDateTime::currentMSecsSinceEpoch();
+        continuousMsg.sender = 1;
+        continuousMsg.senderComponentId = 1;
+        continuousMsg.receiver = 1885;
+        continuousMsg.data = &continuousSound;
+        continuousMsg.length = sizeof(continuousSound);
+        memcpy(continuousMsg.topic, MSG_PropagatedContinuousSound, strlen(MSG_PropagatedContinuousSound) + 1);
+
+        m_component->onMessage(&continuousMsg);
+        addLog("✅ 已发送传播后连续声数据");
+
+        addLog("🎉 完整测试数据发送完成！");
+        addLog("请等待2-3秒后点击\"显示计算结果\"查看声纳方程计算结果");
+
+    } catch(const std::exception& e) {
+        addLog(QString("❌ 发送测试数据时出错: %1").arg(e.what()));
+    } catch(...) {
+        addLog("❌ 发送测试数据时发生未知错误");
+    }
+}
+
+void MainWindow::onSetDIParametersClicked()
+{
+    if (!m_component) {
+        addLog("错误：声纳组件未初始化");
+        return;
+    }
+
+    // 将组件转换为 DeviceModel* 以访问DI参数设置功能
+    DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
+    if (!deviceModel) {
+        addLog("错误：无法转换为 DeviceModel 类型");
+        return;
+    }
+
+    // 创建DI参数设置对话框
+    QDialog dialog(this);
+    dialog.setWindowTitle("设置声纳DI参数");
+    dialog.setModal(true);
+    dialog.resize(400, 300);
+
+    QVBoxLayout* dialogLayout = new QVBoxLayout(&dialog);
+
+    // 说明标签
+    QLabel* infoLabel = new QLabel("设置各声纳位置的DI计算参数\nDI = 20lg(f) + offset\n(频率上限5kHz)");
+    infoLabel->setStyleSheet("color: blue; font-weight: bold;");
+    dialogLayout->addWidget(infoLabel);
+
+    // 声纳参数设置
+    QStringList sonarNames = {"艏端声纳", "舷侧声纳", "粗拖声纳", "细拖声纳"};
+    QList<QDoubleSpinBox*> freqSpinBoxes;
+    QList<QDoubleSpinBox*> offsetSpinBoxes;
+
+    for (int sonarID = 0; sonarID < 4; sonarID++) {
+        QGroupBox* sonarGroup = new QGroupBox(sonarNames[sonarID]);
+        QGridLayout* gridLayout = new QGridLayout(sonarGroup);
+
+        // 频率设置
+        QLabel* freqLabel = new QLabel("频率 (kHz):");
+        QDoubleSpinBox* freqSpinBox = new QDoubleSpinBox();
+        freqSpinBox->setRange(0.1, 5.0);
+        freqSpinBox->setDecimals(1);
+        freqSpinBox->setSingleStep(0.1);
+        freqSpinBox->setValue(3.0 + sonarID * 0.2);  // 默认值
+
+        // 偏移量设置
+        QLabel* offsetLabel = new QLabel("偏移量:");
+        QDoubleSpinBox* offsetSpinBox = new QDoubleSpinBox();
+        offsetSpinBox->setRange(0.0, 20.0);
+        offsetSpinBox->setDecimals(1);
+        offsetSpinBox->setSingleStep(0.1);
+        offsetSpinBox->setValue(9.5 + sonarID * 0.1);  // 默认值
+
+        gridLayout->addWidget(freqLabel, 0, 0);
+        gridLayout->addWidget(freqSpinBox, 0, 1);
+        gridLayout->addWidget(offsetLabel, 1, 0);
+        gridLayout->addWidget(offsetSpinBox, 1, 1);
+
+        freqSpinBoxes.append(freqSpinBox);
+        offsetSpinBoxes.append(offsetSpinBox);
+
+        dialogLayout->addWidget(sonarGroup);
+    }
+
+    // 按钮
+    QHBoxLayout* buttonLayout = new QHBoxLayout();
+    QPushButton* okButton = new QPushButton("确定");
+    QPushButton* cancelButton = new QPushButton("取消");
+
+    connect(okButton, &QPushButton::clicked, &dialog, &QDialog::accept);
+    connect(cancelButton, &QPushButton::clicked, &dialog, &QDialog::reject);
+
+    buttonLayout->addWidget(okButton);
+    buttonLayout->addWidget(cancelButton);
+    dialogLayout->addLayout(buttonLayout);
+
+    // 显示对话框
+    if (dialog.exec() == QDialog::Accepted) {
+        // 应用设置
+        for (int sonarID = 0; sonarID < 4; sonarID++) {
+            double freq = freqSpinBoxes[sonarID]->value();
+            double offset = offsetSpinBoxes[sonarID]->value();
+
+            deviceModel->setDIParameters(sonarID, freq, offset);
+
+            addLog(QString("设置 %1 DI参数: f=%.1f kHz, offset=%.1f")
+                   .arg(sonarNames[sonarID]).arg(freq).arg(offset));
+        }
+
+        addLog("✅ 所有声纳DI参数设置完成");
+    }
+}

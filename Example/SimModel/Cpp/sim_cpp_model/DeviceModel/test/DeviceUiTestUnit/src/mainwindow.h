@@ -1,3 +1,5 @@
+// 在现有的 mainwindow.h 文件中添加声纳方程相关的声明
+
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -16,11 +18,14 @@
 #include <QApplication>
 #include <QScreen>
 #include <QMap>
+#include <QDialog>           // *** 用于DI参数设置对话框 ***
+#include <QDoubleSpinBox>    // *** 用于DI参数设置 ***
 
 #include "CreateDeviceModel.h"
 #include "CSimComponentBase.h"
 #include "DeviceModelAgent.h"
 #include "DeviceTestInOut.h"
+#include "devicemodel.h"     // *** 用于访问DeviceModel类 ***
 
 class MainWindow : public QMainWindow
 {
@@ -50,6 +55,14 @@ private slots:
     //========== 日志功能 ==========//
     // 清除日志按钮点击事件
     void onClearLogClicked();
+
+    //========== 声纳方程相关功能 ==========//
+    // 显示声纳方程计算结果
+    void onShowEquationResultsClicked();
+    // 发送完整测试数据（包含平台噪声、环境噪声、传播声）
+    void onSendCompleteTestDataClicked();
+    // 设置DI参数
+    void onSetDIParametersClicked();
 
 private:
     //========== UI初始化函数 ==========//
@@ -96,6 +109,13 @@ private:
 
     //========== 消息发送组件 ==========//
     QPushButton* m_sendContinuousSoundButton; // 发送连续声数据按钮
+
+    //========== 声纳方程界面组件 ==========//
+    QGroupBox* m_equationGroupBox;              // 声纳方程测试组
+    QPushButton* m_showEquationResultsButton;   // 显示计算结果按钮
+    QPushButton* m_sendCompleteTestDataButton;  // 发送完整测试数据按钮
+    QPushButton* m_setDIParametersButton;       // 设置DI参数按钮
+    QTextEdit* m_equationResultsTextEdit;       // 显示计算结果的文本框
 
     //========== 模型组件 ==========//
     CSimComponentBase* m_component;           // 声纳组件
