@@ -1,0 +1,8 @@
+/SDK/SimModel/Cpp/bin
+*.user
+/Example/SimModel/Cpp/build-sim-cpp-move-test-model-Desktop_Qt_5_12_12_MinGW_64_bit-Debug
+Example/SimModel/Cpp/sim-cpp-sonar-test-model/README.en.md
+/Example/SimModel/Cpp/build-sim-cpp-move-test-model-Desktop_Qt_5_14_2_MinGW_64_bit-Debug
+/Example/SimModel/Cpp/sim-cpp-sonar-test-model/bin2
+/Example/SimModel/Cpp/build-sim_cpp_model-Desktop_Qt_5_14_2_MinGW_64_bit-Debug
+/Example/SimModel/Cpp/sim_cpp_model/bin2
