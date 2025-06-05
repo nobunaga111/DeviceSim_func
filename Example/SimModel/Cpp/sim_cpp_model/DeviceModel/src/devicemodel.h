@@ -147,6 +147,21 @@ private:
 
     void initDetectionTrack();
 
+    /**
+      * @brief 根据本艇航向计算声纳的绝对探测角度范围
+      * @param sonarID 声纳ID
+      * @param ownShipHeading 本艇航向角度
+      * @return 绝对角度范围 (起始角度, 结束角度)
+      */
+     std::pair<float, float> calculateAbsoluteSonarRange(int sonarID, float ownShipHeading);
+
+     /**
+      * @brief 获取声纳的相对探测角度范围（相对于本艇艏向）
+      * @param sonarID 声纳ID
+      * @return 相对角度范围 (起始角度, 结束角度)
+      */
+     std::pair<float, float> getRelativeSonarAngleRange(int sonarID);
+
     // *** 多目标声纳方程计算相关的私有方法 ***
 
     // 单个目标的数据结构

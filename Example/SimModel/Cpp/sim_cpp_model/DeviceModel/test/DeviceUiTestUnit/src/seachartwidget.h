@@ -121,6 +121,17 @@ public:
     QPointF getOwnShipPosition() const;
 
     /**
+     * @brief 安全获取本艇速度
+     */
+    double getOwnShipSpeed() const;
+
+    /**
+     * @brief 检查本艇是否有效
+     */
+    bool isOwnShipValid() const;
+
+
+    /**
      * @brief 设置声纳探测范围显示
      * @param ranges 声纳探测范围列表
      */
@@ -255,6 +266,16 @@ public:
      * @brief 获取海图统计信息
      */
     QString getChartStatistics() const;
+
+    /**
+     * @brief 获取本艇的完整信息
+     */
+    ChartPlatform getOwnShipInfo() const;
+
+    /**
+     * @brief 获取本艇当前航向
+     */
+    double getOwnShipHeading() const;
 
 signals:
     /**

@@ -75,18 +75,8 @@ CSimData* DeviceModelAgent::getSubscribeSimData(const char* topic, int64 platfor
     m_dataAccessCount[key]++;
     m_lastAccessTime[key] = QDateTime::currentMSecsSinceEpoch();
 
-    // 详细调试信息
     if (m_enableDebugOutput) {
         debugLog("Looking for data with key: " + key);
-        debugLog("Available keys in m_subscribedDataMap:");
-        for (const auto& pair : m_subscribedDataMap) {
-            std::string info = "  Key: " + pair.first + ", Data ptr: " +
-                             (pair.second ? "valid" : "null");
-            if (pair.second) {
-                info += ", Timestamp: " + std::to_string(pair.second->time);
-            }
-            debugLog(info);
-        }
     }
 
     auto it = m_subscribedDataMap.find(key);
@@ -336,7 +326,32 @@ void DeviceModelAgent::addSubscribedData(const char* topic, int64 platformId, in
 {
     if (!topic || !data) {
         debugLog("Error: Invalid topic or data pointer in addSubscribedData");
+        if (data) {
+            safeDeleteSimData(data);
+        }
         return;
+    }
+
+    // 添加topic字符串有效性检查
+    std::string topicStr;
+    try {
+        topicStr = std::string(topic);
+        if (topicStr.empty()) {
+            debugLog("Error: Empty topic string");
+            safeDeleteSimData(data);
+            return;
+        }
+    } catch (const std::exception& e) {
+        debugLog("Error: Invalid topic string: " + std::string(e.what()));
+        safeDeleteSimData(data);
+        return;
+    }
+
+    // 检查data->topic的有效性
+    if (strlen(data->topic) == 0) {
+        debugLog("Warning: data->topic is empty, using provided topic");
+        strncpy(data->topic, topic, EventTypeLen - 1);
+        data->topic[EventTypeLen - 1] = '\0';
     }
 
     try {
@@ -348,16 +363,30 @@ void DeviceModelAgent::addSubscribedData(const char* topic, int64 platformId, in
             debugLog("Replacing existing data for key: " + key);
         }
 
-        // 存储新数据（使用智能指针自动管理内存）
-        m_subscribedDataMap[key] = std::unique_ptr<CSimData>(data);
+        // 创建带自定义删除器的shared_ptr
+        auto customDeleter = [this, topicStr](CSimData* simData) {
+            if (simData) {
+                try {
+                    if (simData->data) {
+                        safeDeleteDataContent(topicStr, simData->data);
+                    }
+                    delete simData;
+                } catch (...) {
+                    debugLog("Exception in custom deleter for topic: " + topicStr);
+                    delete simData; // 确保simData被删除
+                }
+            }
+        };
+
+        // 存储新数据
+        m_subscribedDataMap[key] = std::shared_ptr<CSimData>(data, customDeleter);
 
         // 更新访问时间
         m_lastAccessTime[key] = QDateTime::currentMSecsSinceEpoch();
 
-        // 详细调试信息
         debugLog("Successfully stored data with key: " + key +
                 ", timestamp: " + std::to_string(data->time) +
-                ", topic: " + std::string(topic) +
+                ", topic: " + topicStr +
                 ", platformId: " + std::to_string(platformId) +
                 (componentId != -1 ? (", componentId: " + std::to_string(componentId)) : ""));
 
@@ -370,8 +399,60 @@ void DeviceModelAgent::addSubscribedData(const char* topic, int64 platformId, in
 
     } catch (const std::exception& e) {
         debugLog("Exception in addSubscribedData: " + std::string(e.what()));
+        safeDeleteSimData(data);
     } catch (...) {
         debugLog("Unknown exception in addSubscribedData");
+        safeDeleteSimData(data);
+    }
+}
+
+void DeviceModelAgent::safeDeleteSimData(CSimData* data)
+{
+    if (!data) return;
+
+    try {
+        if (data->data) {
+            // 根据topic判断如何删除data->data
+            std::string topic(data->topic);
+            safeDeleteDataContent(topic, data->data);
+        }
+        delete data;
+        debugLog("Safely deleted CSimData pointer");
+    } catch (const std::exception& e) {
+        debugLog("Exception in safeDeleteSimData: " + std::string(e.what()));
+        // 即使出现异常也要尝试删除主结构
+        delete data;
+    } catch (...) {
+        debugLog("Unknown exception in safeDeleteSimData");
+        delete data;
+    }
+}
+
+void DeviceModelAgent::safeDeleteDataContent(const std::string& topic, const void* dataPtr)
+{
+    if (!dataPtr) return;
+
+    try {
+        if (topic == Data_PlatformSelfSound) {
+            delete static_cast<const CData_PlatformSelfSound*>(dataPtr);
+            debugLog("Deleted CData_PlatformSelfSound content");
+        }
+        else if (topic == MSG_PropagatedContinuousSound) {
+            delete static_cast<const CMsg_PropagatedContinuousSoundListStruct*>(dataPtr);
+            debugLog("Deleted PropagatedContinuousSound content");
+        }
+        else if (topic == MSG_EnvironmentNoiseToSonar) {
+            delete static_cast<const CMsg_EnvironmentNoiseToSonarStruct*>(dataPtr);
+            debugLog("Deleted EnvironmentNoise content");
+        }
+        // 可以根据需要添加其他数据类型的清理
+        else {
+            debugLog("Unknown data type for topic: " + topic + ", skipping content deletion");
+        }
+    } catch (const std::exception& e) {
+        debugLog("Exception in safeDeleteDataContent for topic " + topic + ": " + std::string(e.what()));
+    } catch (...) {
+        debugLog("Unknown exception in safeDeleteDataContent for topic: " + topic);
     }
 }
 

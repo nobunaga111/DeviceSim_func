@@ -91,6 +91,11 @@ private:
     void updateSonarEquationResults();
     QString formatSonarResults(const std::map<int, std::vector<DeviceModel::TargetEquationResult>>& allResults);
 
+    /**
+      * @brief 生成并发送平台机动数据（包括朝向信息）
+      */
+    void generateAndSendPlatformMotionData();
+
 private:
     //========== 主要布局组件 ==========//
     QWidget* m_centralWidget;                       // 中央部件

@@ -5,6 +5,7 @@
 #include <map>
 #include <string>
 #include <memory>
+#include <functional>
 #include "../../DeviceModel/src/common/DMLogger.h"
 
 class DeviceModelAgent : public CSimModelAgentBase
@@ -190,11 +191,25 @@ private:
     void debugLog(const std::string& message) const;
 
 private:
+    /**
+    * 安全删除数据指针（包括内部data指针）
+    * @param data 要删除的数据指针
+    */
+    void safeDeleteSimData(CSimData* data);
+
+    /**
+    * 根据主题类型安全删除data->data指针
+    * @param topic 主题名称
+    * @param dataPtr data->data指针
+    */
+    void safeDeleteDataContent(const std::string& topic, const void* dataPtr);
+
+private:
     CSimPlatformEntity m_platform;
     CSimComponentAttribute m_attribute;
 
-    // 存储订阅的各种数据 - 使用智能指针管理内存
-    std::map<std::string, std::unique_ptr<CSimData>> m_subscribedDataMap;
+    // 使用shared_ptr替代unique_ptr，避免自定义删除器的复杂性
+    std::map<std::string, std::shared_ptr<CSimData>> m_subscribedDataMap;
 
     // 数据访问统计
     mutable std::map<std::string, int> m_dataAccessCount;

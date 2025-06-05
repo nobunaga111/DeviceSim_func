@@ -195,7 +195,7 @@ void MainWindow::createSonarStatusPanel()
     QVBoxLayout* sonarLayout = new QVBoxLayout(m_sonarStatusGroup);
 
     // 为每个声纳创建控制组件
-    for (int sonarID = 0; sonarID < 4; sonarID++) {
+    for (int sonarID = 0; sonarID < 4; sonarID++) {  // 确保只有4个声纳(0-3)
         QFrame* sonarFrame = new QFrame();
         sonarFrame->setFrameStyle(QFrame::Box | QFrame::Raised);
         sonarFrame->setStyleSheet("QFrame { border: 1px solid gray; border-radius: 5px; padding: 5px; }");
@@ -207,7 +207,6 @@ void MainWindow::createSonarStatusPanel()
 
         // 声纳名称和启用开关
         control.nameLabel = new QLabel(SONAR_NAMES[sonarID]);
-//        control.nameLabel->setStyleSheet("font-weight: bold; color: " + SONAR_COLORS[sonarID].name() + ";");
         control.nameLabel->setStyleSheet("font-weight: bold; font-size: 14px; color: " + SONAR_COLORS[sonarID].name() + ";");
 
         frameLayout->addWidget(control.nameLabel, 0, 0, 1, 2);
@@ -489,8 +488,13 @@ void MainWindow::onUpdateSonarStatus()
     updateSonarStatusDisplay();
 }
 
+
+
 void MainWindow::onDataGenerationTimer()
 {
+    // 每5秒更新一次平台机动数据（包括朝向信息）
+    generateAndSendPlatformMotionData();
+
     // 每5秒触发一次，生成新的传播声数据
     if (!m_currentTargets.isEmpty() && m_component) {
         generateAndSendPropagatedSoundData(m_currentTargets);
@@ -745,11 +749,11 @@ void MainWindow::generateAndSendPlatformSelfSoundData()
         selfSoundData->sender = m_agent->getPlatformEntity()->id;
         selfSoundData->receiver = m_agent->getPlatformEntity()->id;
         selfSoundData->componentId = 1;
-        selfSoundData->data = platformSelfSound;
-        selfSoundData->length = sizeof(*platformSelfSound);
+        selfSoundData->data = platformSelfSound; // 直接赋值，不需要release()
+        selfSoundData->length = sizeof(CData_PlatformSelfSound);
         memcpy(selfSoundData->topic, Data_PlatformSelfSound, strlen(Data_PlatformSelfSound) + 1);
 
-        // 存储到agent中
+        // 存储到agent中（agent会负责内存管理）
         int64 platformId = m_agent->getPlatformEntity()->id;
         m_agent->addSubscribedData(Data_PlatformSelfSound, platformId, selfSoundData);
 
@@ -771,7 +775,7 @@ CData_PlatformSelfSound* MainWindow::createPlatformSelfSoundData()
     std::random_device rd;
     std::mt19937 gen(rd());
 
-    // 为4个声纳位置创建不同的自噪声数据
+    // 修正：只为4个声纳位置创建自噪声数据（ID 0-3）
     for (int sonarID = 0; sonarID < 4; sonarID++) {
         C_SelfSoundSpectrumStruct spectrumStruct;
         spectrumStruct.sonarID = sonarID;
@@ -970,4 +974,69 @@ QString MainWindow::formatSonarResults(const std::map<int, std::vector<DeviceMod
     resultText += "• 数据每5秒自动更新一次";
 
     return resultText;
+}
+
+
+void MainWindow::generateAndSendPlatformMotionData()
+{
+    if (!m_component || !m_agent || !m_seaChartWidget) {
+        return;
+    }
+
+    try {
+        // 使用安全的方法获取本艇信息
+        if (!m_seaChartWidget->isOwnShipValid()) {
+            addLog("警告：本艇信息无效，跳过平台机动数据更新");
+            return;
+        }
+
+        QPointF ownShipPos = m_seaChartWidget->getOwnShipPosition();
+        double ownShipHeading = m_seaChartWidget->getOwnShipHeading();
+        double ownShipSpeed = m_seaChartWidget->getOwnShipSpeed();
+
+        // 创建平台机动数据
+        CData_Motion* motionData = new CData_Motion();
+        motionData->name = nullptr;
+        motionData->action = true;
+        motionData->isPending = false;
+        motionData->x = ownShipPos.x();           // 经度
+        motionData->y = ownShipPos.y();           // 纬度
+        motionData->z = -200.0;                   // 深度（水下）
+        motionData->curSpeed = ownShipSpeed;      // 速度（节）
+        motionData->rotation = ownShipHeading;    // 关键：从海图获取的实际船头朝向！
+        motionData->mVerticalSpeed = 0.0;
+        motionData->mAcceleration = 0.0;
+        motionData->roll = 0.0;
+        motionData->yaw = 0.0;
+        motionData->pitch = 0.0;
+        motionData->mRollVel = 0.0;
+        motionData->mPitchVel = 0.0;
+        motionData->mYawVel = 0.0;
+
+        // 创建 CSimData 包装器
+        CSimData* simData = new CSimData();
+        simData->dataFormat = STRUCT;
+        simData->time = QDateTime::currentMSecsSinceEpoch();
+        simData->sender = m_agent->getPlatformEntity()->id;
+        simData->receiver = m_agent->getPlatformEntity()->id;
+        simData->componentId = 1;
+        simData->data = motionData;
+        simData->length = sizeof(CData_Motion);
+        memcpy(simData->topic, Data_Motion, strlen(Data_Motion) + 1);
+
+        // 存储到agent中
+        int64 platformId = m_agent->getPlatformEntity()->id;
+        m_agent->addSubscribedData(Data_Motion, platformId, simData);
+
+        addLog(QString("已更新平台机动数据 - 位置:(%.4f, %.4f), 朝向:%.1f°, 速度:%.1f节")
+               .arg(ownShipPos.x())
+               .arg(ownShipPos.y())
+               .arg(ownShipHeading)
+               .arg(ownShipSpeed));
+
+    } catch(const std::exception& e) {
+        addLog(QString("生成平台机动数据时出错: %1").arg(e.what()));
+    } catch(...) {
+        addLog("生成平台机动数据时发生未知错误");
+    }
 }

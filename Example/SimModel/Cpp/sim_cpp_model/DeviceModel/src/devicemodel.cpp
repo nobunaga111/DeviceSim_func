@@ -435,8 +435,8 @@ void DeviceModel::updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage)
         // 为每个目标分配一个唯一ID
         int targetId = targetIndex + 1000; // 从1000开始编号避免与其他ID冲突
 
-        // 计算目标相对于本艇的位置
-        float targetBearing = soundData.arrivalSideAngle;
+        // 获取目标的绝对方位角和距离
+        float targetBearing = soundData.arrivalSideAngle;  // 这是绝对方位角
         float targetDistance = soundData.targetDistance;
 
         LOG_INFOF("Processing target %d: bearing=%.1f°, distance=%.1fm",
@@ -452,7 +452,7 @@ void DeviceModel::updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage)
                 continue; // 声纳未启用，跳过
             }
 
-            // 检查目标是否在该声纳的探测范围内
+            // 使用修复后的角度范围检查方法
             if (!isTargetInSonarRange(sonarID, targetBearing, targetDistance)) {
                 continue; // 不在探测范围内，跳过
             }
@@ -749,61 +749,65 @@ bool DeviceModel::isTargetInSonarRange(int sonarID, float targetBearing, float t
         return false;
     }
 
-    // 获取声纳的探测角度范围
-    auto angleRange = getSonarDetectionAngleRange(sonarID);
-    float startAngle = angleRange.first;
-    float endAngle = angleRange.second;
+    // 获取本艇当前航向
+    float ownShipHeading = static_cast<float>(m_platformMotion.rotation);
 
-    // 将角度标准化到0-360度范围
-    auto normalizeAngle = [](float angle) -> float {
-        while (angle < 0) angle += 360.0f;
-        while (angle >= 360) angle -= 360.0f;
-        return angle;
-    };
+    // 添加详细的调试信息
+    LOG_INFOF("=== Sonar Range Check Debug ===");
+    LOG_INFOF("SonarID: %d, Target bearing: %.1f°, Target distance: %.1fm",
+              sonarID, targetBearing, targetDistance);
+    LOG_INFOF("Own ship heading: %.1f°", ownShipHeading);
 
-    float normalizedTargetBearing = normalizeAngle(targetBearing);
-    float normalizedStartAngle = normalizeAngle(startAngle);
-    float normalizedEndAngle = normalizeAngle(endAngle);
+    // 获取声纳的相对角度范围
+    auto relativeRange = getRelativeSonarAngleRange(sonarID);
+    float relativeStart = relativeRange.first;
+    float relativeEnd = relativeRange.second;
 
-    // 检查目标是否在角度范围内
+    LOG_INFOF("Sonar %d relative range: [%.1f°, %.1f°]", sonarID, relativeStart, relativeEnd);
+
+    // 计算目标相对于本艇艏向的角度
+    float relativeTargetBearing = targetBearing - ownShipHeading;
+
+    // 标准化相对角度到-180~180度范围
+    while (relativeTargetBearing > 180.0f) relativeTargetBearing -= 360.0f;
+    while (relativeTargetBearing <= -180.0f) relativeTargetBearing += 360.0f;
+
+    LOG_INFOF("Relative target bearing: %.1f°", relativeTargetBearing);
+
+    // 检查目标是否在相对角度范围内
     bool inRange = false;
-    if (normalizedStartAngle <= normalizedEndAngle) {
-        // 角度范围不跨越0度
-        inRange = (normalizedTargetBearing >= normalizedStartAngle &&
-                  normalizedTargetBearing <= normalizedEndAngle);
+
+    if (relativeStart <= relativeEnd) {
+        // 正常情况，不跨越±180度边界
+        inRange = (relativeTargetBearing >= relativeStart && relativeTargetBearing <= relativeEnd);
+        LOG_INFOF("Normal range check: %.1f° >= %.1f° && %.1f° <= %.1f° = %s",
+                  relativeTargetBearing, relativeStart, relativeTargetBearing, relativeEnd,
+                  inRange ? "true" : "false");
     } else {
-        // 角度范围跨越0度
-        inRange = (normalizedTargetBearing >= normalizedStartAngle ||
-                  normalizedTargetBearing <= normalizedEndAngle);
+        // 跨越±180度边界的情况
+        inRange = (relativeTargetBearing >= relativeStart || relativeTargetBearing <= relativeEnd);
+        LOG_INFOF("Cross-boundary range check: %.1f° >= %.1f° || %.1f° <= %.1f° = %s",
+                  relativeTargetBearing, relativeStart, relativeTargetBearing, relativeEnd,
+                  inRange ? "true" : "false");
     }
 
-    LOG_DEBUGF("Target bearing %.1f° in sonar %d range [%.1f°, %.1f°]: %s",
-               targetBearing, sonarID, startAngle, endAngle, inRange ? "YES" : "NO");
+    LOG_INFOF("Final result: %s", inRange ? "IN RANGE" : "OUT OF RANGE");
+    LOG_INFOF("=== End Debug ===");
 
     return inRange;
 }
 
+
 std::pair<float, float> DeviceModel::getSonarDetectionAngleRange(int sonarID)
 {
-    switch (sonarID) {
-        case 0: // 艏端声纳 - 前向扇形区域
-            return std::make_pair(315.0f, 45.0f);  // -45° to +45° (相对艏向)
-
-        case 1: // 舷侧声纳 - 两段式：左舷和右舷
-            // 注意：舷侧声纳实际上需要特殊处理，这里简化为左舷范围
-            // 在实际应用中可能需要分别处理左舷和右舷
-            return std::make_pair(90.0f, 270.0f);  // 左舷90°到右舷270°
-
-        case 2: // 粗拖声纳 - 后向扇形区域
-            return std::make_pair(135.0f, 225.0f); // 后方90度扇形
-
-        case 3: // 细拖声纳 - 后向扇形区域
-            return std::make_pair(120.0f, 240.0f); // 后方120度扇形
-
-        default:
-            LOG_WARNF("Unknown sonar ID %d, using default range", sonarID);
-            return std::make_pair(0.0f, 360.0f);   // 全方位
+    // 获取本艇当前航向
+    float ownShipHeading = 0.0f;
+    if (m_agent && m_agent->getPlatformEntity()) {
+        // 从平台机动信息获取航向
+        ownShipHeading = static_cast<float>(m_platformMotion.rotation);
     }
+
+    return calculateAbsoluteSonarRange(sonarID, ownShipHeading);
 }
 
 // *** 公共接口实现 ***
@@ -898,3 +902,48 @@ std::map<int, double> DeviceModel::getAllSonarEquationResults()
 
     return compatResults;
 }
+
+std::pair<float, float> DeviceModel::getRelativeSonarAngleRange(int sonarID)
+{
+    switch (sonarID) {
+        case 0: // 艏端声纳 - 前向扇形区域（相对艏向 -45° to +45°）
+            return std::make_pair(-45.0f, 45.0f);
+
+        case 1: // 舷侧声纳 - 左右舷侧区域
+            // 分为两段：左舷45°-135°和右舷-135°到-45°
+            // 这里简化为左舷范围，实际可能需要特殊处理
+            return std::make_pair(45.0f, 135.0f);
+
+        case 2: // 粗拖声纳 - 后向扇形区域（相对艏向后方90度扇形）
+            return std::make_pair(135.0f, 225.0f);
+
+        case 3: // 细拖声纳 - 后向扇形区域（相对艏向后方120度扇形）
+            return std::make_pair(120.0f, 240.0f);
+
+        default:
+            LOG_WARNF("Unknown sonar ID %d, using default range", sonarID);
+            return std::make_pair(0.0f, 360.0f);
+    }
+}
+
+std::pair<float, float> DeviceModel::calculateAbsoluteSonarRange(int sonarID, float ownShipHeading)
+{
+    auto relativeRange = getRelativeSonarAngleRange(sonarID);
+
+    // 将相对角度转换为绝对角度
+    float absoluteStart = relativeRange.first + ownShipHeading;
+    float absoluteEnd = relativeRange.second + ownShipHeading;
+
+    // 标准化角度到0-360度范围
+    auto normalizeAngle = [](float angle) -> float {
+        while (angle < 0) angle += 360.0f;
+        while (angle >= 360) angle -= 360.0f;
+        return angle;
+    };
+
+    absoluteStart = normalizeAngle(absoluteStart);
+    absoluteEnd = normalizeAngle(absoluteEnd);
+
+    return std::make_pair(absoluteStart, absoluteEnd);
+}
+
