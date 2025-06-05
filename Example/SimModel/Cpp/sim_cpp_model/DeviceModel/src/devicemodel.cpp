@@ -324,6 +324,7 @@ void DeviceModel::handlePlatformSelfSound(CSimData* simData)
 
 void DeviceModel::step(int64 curTime, int32 step)
 {
+    LOG_INFO("steeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeep");
     (void)step;
 
     std::cout << __FUNCTION__ << ":" << __LINE__ << "stepstep" << std::endl;

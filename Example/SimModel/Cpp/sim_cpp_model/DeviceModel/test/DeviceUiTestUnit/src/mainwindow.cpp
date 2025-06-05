@@ -216,7 +216,6 @@ void MainWindow::createSonarControlPanel()
     m_sonarControlTab->setLayout(layout);
 }
 
-// 创建消息发送面板
 void MainWindow::createMessageSendPanel()
 {
     // 创建消息发送面板布局
@@ -228,7 +227,7 @@ void MainWindow::createMessageSendPanel()
 
     // 创建发送连续声数据按钮
     m_sendContinuousSoundButton = new QPushButton("发送连续声数据 (MSG_PropagatedContinuousSound)");
-    m_sendContinuousSoundButton->setMinimumHeight(50);
+    m_sendContinuousSoundButton->setMinimumHeight(40);
     connect(m_sendContinuousSoundButton, &QPushButton::clicked, this, &MainWindow::onSendContinuousSoundClicked);
 
     // 添加说明标签
@@ -236,13 +235,64 @@ void MainWindow::createMessageSendPanel()
     descLabel->setWordWrap(true);
     descLabel->setStyleSheet("color: gray; font-size: 12px;");
 
-    // 添加控件到布局
+    // 添加控件到消息发送布局
     messageLayout->addWidget(descLabel);
     messageLayout->addWidget(m_sendContinuousSoundButton);
-    messageLayout->addStretch(1);
 
-    // 添加消息发送组到主布局
+    // *** 新增：声纳方程测试组 ***
+    m_equationGroupBox = new QGroupBox("声纳方程计算测试");
+    QVBoxLayout* equationLayout = new QVBoxLayout(m_equationGroupBox);
+
+    // 发送完整测试数据按钮
+    m_sendCompleteTestDataButton = new QPushButton("发送完整测试数据");
+    m_sendCompleteTestDataButton->setMinimumHeight(40);
+    m_sendCompleteTestDataButton->setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;");
+    connect(m_sendCompleteTestDataButton, &QPushButton::clicked, this, &MainWindow::onSendCompleteTestDataClicked);
+
+    // 显示计算结果按钮
+    m_showEquationResultsButton = new QPushButton("显示声纳方程计算结果");
+    m_showEquationResultsButton->setMinimumHeight(40);
+    m_showEquationResultsButton->setStyleSheet("background-color: #2196F3; color: white; font-weight: bold;");
+    connect(m_showEquationResultsButton, &QPushButton::clicked, this, &MainWindow::onShowEquationResultsClicked);
+
+    // 设置DI参数按钮
+    m_setDIParametersButton = new QPushButton("设置DI参数");
+    m_setDIParametersButton->setMinimumHeight(40);
+    m_setDIParametersButton->setStyleSheet("background-color: #FF9800; color: white; font-weight: bold;");
+    connect(m_setDIParametersButton, &QPushButton::clicked, this, &MainWindow::onSetDIParametersClicked);
+
+    // 创建按钮布局
+    QHBoxLayout* buttonLayout = new QHBoxLayout();
+    buttonLayout->addWidget(m_sendCompleteTestDataButton);
+    buttonLayout->addWidget(m_showEquationResultsButton);
+
+    // 计算结果显示区域
+    m_equationResultsTextEdit = new QTextEdit();
+    m_equationResultsTextEdit->setReadOnly(true);
+    m_equationResultsTextEdit->setMaximumHeight(200);
+    m_equationResultsTextEdit->setPlainText("点击\"发送完整测试数据\"开始测试声纳方程计算功能...");
+
+    // 添加说明标签
+    QLabel* equationDescLabel = new QLabel(
+        "声纳方程计算测试流程：\n"
+        "1. 点击\"发送完整测试数据\"发送所需的三种数据\n"
+        "2. 等待2-3秒让系统处理数据\n"
+        "3. 点击\"显示计算结果\"查看计算结果\n"
+        "4. 可选：点击\"设置DI参数\"调整计算参数"
+    );
+    equationDescLabel->setWordWrap(true);
+    equationDescLabel->setStyleSheet("color: #666; font-size: 11px; padding: 5px; background-color: #f0f0f0; border-radius: 3px;");
+
+    // 添加控件到声纳方程布局
+    equationLayout->addWidget(equationDescLabel);
+    equationLayout->addLayout(buttonLayout);
+    equationLayout->addWidget(m_setDIParametersButton);
+    equationLayout->addWidget(new QLabel("计算结果："));
+    equationLayout->addWidget(m_equationResultsTextEdit);
+
+    // 添加分组框到主布局
     layout->addWidget(messageGroupBox);
+    layout->addWidget(m_equationGroupBox);  // 添加新的声纳方程测试组
     layout->addStretch(1);
 
     // 设置消息发送标签页布局
@@ -771,8 +821,8 @@ void MainWindow::onShowEquationResultsClicked()
 
 void MainWindow::onSendCompleteTestDataClicked()
 {
-    if (!m_component) {
-        addLog("错误：声纳组件未初始化");
+    if (!m_component || !m_agent) {
+        addLog("错误：声纳组件或代理未初始化");
         return;
     }
 
@@ -805,24 +855,54 @@ void MainWindow::onSendCompleteTestDataClicked()
         m_component->onMessage(&envMsg);
         addLog("✅ 已发送环境噪声数据");
 
-        // 2. 模拟平台自噪声数据（通过代理间接发送）
-        // 注意：平台自噪声是通过getSubscribeSimData获取的，这里我们模拟数据已准备好
-        addLog("✅ 平台自噪声数据准备完成（通过订阅数据机制）");
+        // 2. *** 准备平台自噪声数据 ***
+        CData_PlatformSelfSound* platformSelfSound = new CData_PlatformSelfSound();
+
+        // 为4个声纳位置创建自噪声数据
+        std::uniform_real_distribution<float> selfNoiseDist(30.0f, 50.0f);  // 30-50 dB
+
+        for (int sonarID = 0; sonarID < 4; sonarID++) {
+            C_SelfSoundSpectrumStruct spectrumStruct;
+            spectrumStruct.sonarID = sonarID;
+
+            // 生成频谱数据
+            for (int i = 0; i < 5296; i++) {
+                spectrumStruct.spectumData[i] = selfNoiseDist(gen);
+            }
+
+            platformSelfSound->selfSoundSpectrumList.push_back(spectrumStruct);
+        }
+
+        // 创建 CSimData 包装器
+        CSimData* selfSoundData = new CSimData();
+        selfSoundData->dataFormat = STRUCT;
+        selfSoundData->time = QDateTime::currentMSecsSinceEpoch();
+        selfSoundData->sender = m_agent->getPlatformEntity()->id;
+        selfSoundData->receiver = m_agent->getPlatformEntity()->id;
+        selfSoundData->componentId = 1;
+        selfSoundData->data = platformSelfSound;
+        selfSoundData->length = sizeof(*platformSelfSound);
+        memcpy(selfSoundData->topic, Data_PlatformSelfSound, strlen(Data_PlatformSelfSound) + 1);
+
+        // *** 关键：将数据添加到代理的订阅数据中 ***
+        m_agent->addSubscribedData(Data_PlatformSelfSound,
+                                   m_agent->getPlatformEntity()->id,
+                                   selfSoundData);
+
+        addLog("✅ 已准备平台自噪声数据并添加到订阅数据中");
 
         // 3. 发送传播后连续声数据
         CMsg_PropagatedContinuousSoundListStruct continuousSound;
-
-        // 为4个声纳位置各创建一个传播声数据
-        std::uniform_real_distribution<float> signalDist(60.0f, 80.0f);  // 60-80 dB（信号强度）
+    // 为4个声纳位置各创建一个传播声数据
+        std::uniform_real_distribution<float> signalDist(60.0f, 80.0f); // 60-80 dB（信号强度）
 
         for (int sonarID = 0; sonarID < 4; sonarID++) {
             C_PropagatedContinuousSoundStruct soundData;
-
-            // 设置目标参数
+        // 设置目标参数
             soundData.arrivalSideAngle = 30.0f + sonarID * 10.0f;  // 不同方向
             soundData.arrivalPitchAngle = 5.0f;
             soundData.targetDistance = 1000.0f + sonarID * 200.0f;
-            soundData.platType = 1;  // 潜艇类型
+            soundData.platType = 1; // 潜艇类型
 
             // 生成频谱数据
             for (int i = 0; i < 5296; i++) {
@@ -854,6 +934,7 @@ void MainWindow::onSendCompleteTestDataClicked()
         addLog("❌ 发送测试数据时发生未知错误");
     }
 }
+
 
 void MainWindow::onSetDIParametersClicked()
 {
