@@ -199,9 +199,9 @@ void DeviceModel::onMessage(CSimMessage* simMessage)
         updateEnvironmentNoiseCache(simMessage);
         //*******************
 
-        // 处理环境噪声数据
-        const CMsg_EnvironmentNoiseToSonarStruct* noiseData =
-            reinterpret_cast<const CMsg_EnvironmentNoiseToSonarStruct*>(simMessage->data);
+//        // 处理环境噪声数据
+//        const CMsg_EnvironmentNoiseToSonarStruct* noiseData =
+//            reinterpret_cast<const CMsg_EnvironmentNoiseToSonarStruct*>(simMessage->data);
 
         // 环境噪声等待处理
 
@@ -314,13 +314,13 @@ void DeviceModel::handlePlatformSelfSound(CSimData* simData)
     updatePlatformSelfSoundCache(simData);
     //*******************
 
-    const CData_PlatformSelfSound* selfSound =
-        reinterpret_cast<const CData_PlatformSelfSound*>(simData->data);
+//    const CData_PlatformSelfSound* selfSound =
+//        reinterpret_cast<const CData_PlatformSelfSound*>(simData->data);
 
-    // 处理平台自噪声数据
-    std::cout << __FUNCTION__ << ":" << __LINE__
-              << " Received platform self sound data, spectrum count: "
-              << selfSound->selfSoundSpectrumList.size() << std::endl;
+//    // 处理平台自噪声数据
+//    std::cout << __FUNCTION__ << ":" << __LINE__
+//              << " Received platform self sound data, spectrum count: "
+//              << selfSound->selfSoundSpectrumList.size() << std::endl;
 
     // 此处可以保存自噪声数据供后续处理
 }

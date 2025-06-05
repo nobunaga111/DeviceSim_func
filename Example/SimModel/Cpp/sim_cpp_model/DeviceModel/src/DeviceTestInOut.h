@@ -279,7 +279,7 @@ struct C_SelfSoundSpectrumStruct
     }
 };
 
-//潜艇平台区噪声数据  主题：Data_PlatformSelfSound
+//---潜艇平台区噪声数据  主题：Data_PlatformSelfSound
 struct CData_PlatformSelfSound
 {
     std::list<C_SelfSoundSpectrumStruct> selfSoundSpectrumList;
@@ -402,7 +402,7 @@ struct C_PropagatedContinuousSoundStruct
     }
 };
 
-//平台辐射噪声经传播后，到达声纳的信号数据，属连续声 主题名：MSG_PropagatedContinuousSound
+//---平台辐射噪声经传播后，到达声纳的信号数据，属连续声 主题名：MSG_PropagatedContinuousSound
 struct CMsg_PropagatedContinuousSoundListStruct
 {
     std::list<C_PropagatedContinuousSoundStruct> propagatedContinuousList; // ?
@@ -527,7 +527,7 @@ struct CMsg_PropagatedCommPulseSoundListStruct
 };
 
 
-//海洋环境噪声数据 主题名：MSG_EnvironmentNoiseToSonar
+//---海洋环境噪声数据 主题名：MSG_EnvironmentNoiseToSonar
 struct CMsg_EnvironmentNoiseToSonarStruct
 {
     float spectrumData[5296];				//频谱数据	10Hz~40kHz,间隔2Hz(10Hz-10kHz)、间隔1kHz(10kHz-40kHz)
