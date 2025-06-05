@@ -398,9 +398,7 @@ void DeviceModel::handleSonarInitialization(CSimMessage* simMessage)
               << std::endl;
 }
 
-// devicemodel.cpp  - 多目标声纳方程计算实现
 
-// *** 多目标传播声数据缓存更新 ***
 void DeviceModel::updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage)
 {
     if (!simMessage || !simMessage->data) {
@@ -501,7 +499,7 @@ void DeviceModel::updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage)
                 *existingIt = targetData;
                 LOG_INFOF("Updated existing target %d for sonar %d", targetId, sonarID);
             } else {
-                // 添加新目标数据
+                // 新目标数据
                 targetsData.push_back(targetData);
                 LOG_INFOF("Added new target %d for sonar %d (total targets: %zu)",
                           targetId, sonarID, targetsData.size());
@@ -752,7 +750,7 @@ bool DeviceModel::isTargetInSonarRange(int sonarID, float targetBearing, float t
     // 获取本艇当前航向
     float ownShipHeading = static_cast<float>(m_platformMotion.rotation);
 
-    // 添加详细的调试信息
+    // 更详细的调试信息
     LOG_INFOF("=== Sonar Range Check Debug ===");
     LOG_INFOF("SonarID: %d, Target bearing: %.1f°, Target distance: %.1fm",
               sonarID, targetBearing, targetDistance);
@@ -765,7 +763,7 @@ bool DeviceModel::isTargetInSonarRange(int sonarID, float targetBearing, float t
 
     LOG_INFOF("Sonar %d relative range: [%.1f°, %.1f°]", sonarID, relativeStart, relativeEnd);
 
-    // 计算目标相对于本艇艏向的角度
+    // 改进角度计算逻辑
     float relativeTargetBearing = targetBearing - ownShipHeading;
 
     // 标准化相对角度到-180~180度范围
@@ -774,20 +772,29 @@ bool DeviceModel::isTargetInSonarRange(int sonarID, float targetBearing, float t
 
     LOG_INFOF("Relative target bearing: %.1f°", relativeTargetBearing);
 
-    // 检查目标是否在相对角度范围内
+    // 修复：改进范围检查逻辑
     bool inRange = false;
 
-    if (relativeStart <= relativeEnd) {
+    // 将声纳范围也标准化到-180~180
+    float normalizedStart = relativeStart;
+    float normalizedEnd = relativeEnd;
+
+    while (normalizedStart > 180.0f) normalizedStart -= 360.0f;
+    while (normalizedStart <= -180.0f) normalizedStart += 360.0f;
+    while (normalizedEnd > 180.0f) normalizedEnd -= 360.0f;
+    while (normalizedEnd <= -180.0f) normalizedEnd += 360.0f;
+
+    if (normalizedStart <= normalizedEnd) {
         // 正常情况，不跨越±180度边界
-        inRange = (relativeTargetBearing >= relativeStart && relativeTargetBearing <= relativeEnd);
+        inRange = (relativeTargetBearing >= normalizedStart && relativeTargetBearing <= normalizedEnd);
         LOG_INFOF("Normal range check: %.1f° >= %.1f° && %.1f° <= %.1f° = %s",
-                  relativeTargetBearing, relativeStart, relativeTargetBearing, relativeEnd,
+                  relativeTargetBearing, normalizedStart, relativeTargetBearing, normalizedEnd,
                   inRange ? "true" : "false");
     } else {
-        // 跨越±180度边界的情况
-        inRange = (relativeTargetBearing >= relativeStart || relativeTargetBearing <= relativeEnd);
+        // 跨越±180度边界的情况（例如从150度到-150度）
+        inRange = (relativeTargetBearing >= normalizedStart || relativeTargetBearing <= normalizedEnd);
         LOG_INFOF("Cross-boundary range check: %.1f° >= %.1f° || %.1f° <= %.1f° = %s",
-                  relativeTargetBearing, relativeStart, relativeTargetBearing, relativeEnd,
+                  relativeTargetBearing, normalizedStart, relativeTargetBearing, normalizedEnd,
                   inRange ? "true" : "false");
     }
 
@@ -796,7 +803,6 @@ bool DeviceModel::isTargetInSonarRange(int sonarID, float targetBearing, float t
 
     return inRange;
 }
-
 
 std::pair<float, float> DeviceModel::getSonarDetectionAngleRange(int sonarID)
 {

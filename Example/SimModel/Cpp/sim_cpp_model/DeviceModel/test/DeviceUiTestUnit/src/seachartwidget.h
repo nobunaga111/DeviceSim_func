@@ -83,7 +83,7 @@ public:
     void setMainWindow(MainWindow* mainWindow);
 
     /**
-     * @brief 添加平台到海图
+     * @brief 平台到海图
      * @param platform 平台信息
      */
     void addPlatform(const ChartPlatform& platform);
@@ -277,6 +277,12 @@ public:
      */
     double getOwnShipHeading() const;
 
+    /**
+     * @brief 坐标转换：地理坐标 -> 屏幕坐标
+     */
+    QPoint geoToScreen(const QPointF& geoPos) const;
+
+
 signals:
     /**
      * @brief 平台位置改变信号
@@ -332,10 +338,6 @@ private:
      */
     void updateControlPanelValues();
 
-    /**
-     * @brief 坐标转换：地理坐标 -> 屏幕坐标
-     */
-    QPoint geoToScreen(const QPointF& geoPos) const;
 
     /**
      * @brief 坐标转换：屏幕坐标 -> 地理坐标
@@ -393,6 +395,31 @@ private:
      * @brief 生成传播声数据并发送
      */
     void generateAndSendPropagatedSoundData();
+
+    /**
+     * @brief 验证位置是否有效（非零且在合理范围内）
+     */
+    bool isValidPosition(const QPointF& pos) const;
+
+    /**
+     * @brief 强制验证并修复本艇位置
+     */
+    void validateAndFixOwnShipPosition();
+    void findOwnShip();
+    /**
+     * @brief 移除目标（确保不影响本艇）
+     */
+    void removeTarget();
+
+    /**
+     * @brief 安全获取本艇位置（带验证）
+     */
+    QPointF getOwnShipPositionSafe() const;
+
+    /**
+     * @brief 安全获取本艇朝向（带验证）
+     */
+    double getOwnShipHeadingSafe() const;
 
 private:
     MainWindow* m_mainWindow;                       // 主窗口引用

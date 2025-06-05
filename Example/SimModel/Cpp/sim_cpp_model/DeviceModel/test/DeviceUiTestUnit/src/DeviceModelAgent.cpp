@@ -315,7 +315,7 @@ CSimIntegrationLogger* DeviceModelAgent::getLogger()
     return nullptr;
 }
 
-// ========== 新增的多目标支持方法实现 ==========
+
 
 void DeviceModelAgent::addSubscribedData(const char* topic, int64 platformId, CSimData* data)
 {
@@ -332,7 +332,7 @@ void DeviceModelAgent::addSubscribedData(const char* topic, int64 platformId, in
         return;
     }
 
-    // 添加topic字符串有效性检查
+    // topic字符串有效性检查
     std::string topicStr;
     try {
         topicStr = std::string(topic);
@@ -445,7 +445,7 @@ void DeviceModelAgent::safeDeleteDataContent(const std::string& topic, const voi
             delete static_cast<const CMsg_EnvironmentNoiseToSonarStruct*>(dataPtr);
             debugLog("Deleted EnvironmentNoise content");
         }
-        // 可以根据需要添加其他数据类型的清理
+        // 其他数据类型的清理
         else {
             debugLog("Unknown data type for topic: " + topic + ", skipping content deletion");
         }

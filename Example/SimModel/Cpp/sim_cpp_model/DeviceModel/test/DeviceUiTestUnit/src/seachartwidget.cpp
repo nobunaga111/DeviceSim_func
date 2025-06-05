@@ -100,50 +100,40 @@ void SeaChartWidget::initializeSonarRanges()
 {
     m_sonarRanges.clear(); // 先清空，避免重复添加
 
-    // 艏端声纳
-    SonarDetectionRange bowSonar;
-    bowSonar.sonarId = 0;
-    bowSonar.sonarName = "艏端声纳";
-    bowSonar.startAngle = -45.0f;  // 相对艏向左45度
-    bowSonar.endAngle = 45.0f;     // 相对艏向右45度
-    bowSonar.maxRange = 30000.0f;
-    bowSonar.color = QColor(0, 255, 0, 100);
-    bowSonar.isVisible = true;
+    // 确保只创建4个声纳范围（ID 0-3）
+    struct SonarDefinition {
+        int id;
+        QString name;
+        float startAngle;
+        float endAngle;
+        float maxRange;
+        QColor color;
+        bool visible;
+    };
 
-    // 舷侧声纳 - 修复ID不一致问题，合并为一个声纳
-    SonarDetectionRange sideSonar;
-    sideSonar.sonarId = 1;
-    sideSonar.sonarName = "舷侧声纳";
-    sideSonar.startAngle = 45.0f;   // 相对艏向左舷
-    sideSonar.endAngle = 135.0f;    // 相对艏向左后（简化处理）
-    sideSonar.maxRange = 25000.0f;
-    sideSonar.color = QColor(0, 0, 255, 80);
-    sideSonar.isVisible = true;
+    QVector<SonarDefinition> sonarDefinitions = {
+        // 艏端声纳
+        {0, "艏端声纳", -45.0f, 45.0f, 30000.0f, QColor(0, 255, 0, 100), true},
+        // 舷侧声纳
+        {1, "舷侧声纳", 45.0f, 135.0f, 25000.0f, QColor(0, 0, 255, 80), true},
+        // 粗拖声纳
+        {2, "粗拖声纳", 135.0f, 225.0f, 35000.0f, QColor(255, 255, 0, 100), true},
+        // 细拖声纳
+        {3, "细拖声纳", 120.0f, 240.0f, 40000.0f, QColor(255, 0, 255, 100), true}
+    };
 
-    // 粗拖声纳
-    SonarDetectionRange coarseTowSonar;
-    coarseTowSonar.sonarId = 2;
-    coarseTowSonar.sonarName = "粗拖声纳";
-    coarseTowSonar.startAngle = 135.0f;  // 相对艏向左后
-    coarseTowSonar.endAngle = 225.0f;    // 相对艏向右后
-    coarseTowSonar.maxRange = 35000.0f;
-    coarseTowSonar.color = QColor(255, 255, 0, 100);
-    coarseTowSonar.isVisible = true;
+    for (const auto& sonarDef : sonarDefinitions) {
+        SonarDetectionRange range;
+        range.sonarId = sonarDef.id;
+        range.sonarName = sonarDef.name;
+        range.startAngle = sonarDef.startAngle;
+        range.endAngle = sonarDef.endAngle;
+        range.maxRange = sonarDef.maxRange;
+        range.color = sonarDef.color;
+        range.isVisible = sonarDef.visible;
 
-    // 细拖声纳
-    SonarDetectionRange fineTowSonar;
-    fineTowSonar.sonarId = 3;
-    fineTowSonar.sonarName = "细拖声纳";
-    fineTowSonar.startAngle = 120.0f;   // 相对艏向左后
-    fineTowSonar.endAngle = 240.0f;     // 相对艏向右后
-    fineTowSonar.maxRange = 40000.0f;
-    fineTowSonar.color = QColor(255, 0, 255, 100);
-    fineTowSonar.isVisible = true;
-
-    m_sonarRanges.append(bowSonar);
-    m_sonarRanges.append(sideSonar);
-    m_sonarRanges.append(coarseTowSonar);
-    m_sonarRanges.append(fineTowSonar);
+        m_sonarRanges.append(range);
+    }
 
     qDebug() << "Initialized" << m_sonarRanges.size() << "sonar ranges with consistent IDs 0-3";
 }
@@ -266,7 +256,7 @@ void SeaChartWidget::createControlPanel()
     }
     panelLayout->addWidget(m_sonarControlGroup);
 
-    // 添加弹性空间
+    // 弹性空间
     panelLayout->addStretch(1);
 }
 
@@ -481,13 +471,13 @@ void SeaChartWidget::setSonarRangeVisible(int sonarId, bool visible)
     }
 }
 
-// *** 添加新方法：检查并修复声纳范围状态 ***
+// *** 检查并修复声纳范围状态 ***
 void SeaChartWidget::validateSonarRanges()
 {
     bool needUpdate = false;
 
     // 确保声纳范围数据完整性
-    if (m_sonarRanges.size() != 5) {
+    if (m_sonarRanges.size() != 4) {  // 修改：从5改为4
         qDebug() << "Warning: Sonar ranges count is" << m_sonarRanges.size() << ", reinitializing";
         initializeSonarRanges();
         needUpdate = true;
@@ -501,9 +491,9 @@ void SeaChartWidget::validateSonarRanges()
             switch (range.sonarId) {
                 case 0: range.color = QColor(0, 255, 0, 100); break;
                 case 1: range.color = QColor(0, 0, 255, 80); break;
-                case 11: range.color = QColor(0, 0, 255, 80); break;
                 case 2: range.color = QColor(255, 255, 0, 100); break;
                 case 3: range.color = QColor(255, 0, 255, 100); break;
+                default: range.color = QColor(128, 128, 128, 100); break; // 默认情况
             }
             needUpdate = true;
         }
@@ -562,6 +552,9 @@ void SeaChartWidget::paintEvent(QPaintEvent* event)
 {
     Q_UNUSED(event);
 
+    // *** 绘制前验证本艇位置 ***
+    validateAndFixOwnShipPosition();
+
     // *** 每次绘制前验证声纳范围状态 ***
     validateSonarRanges();
 
@@ -578,7 +571,7 @@ void SeaChartWidget::paintEvent(QPaintEvent* event)
     painter.restore();
 
     painter.save();
-    drawSonarRanges(painter);
+    drawSonarRanges(painter);  // 现在有了有效的本艇位置
     painter.restore();
 
     painter.save();
@@ -654,9 +647,18 @@ void SeaChartWidget::drawPlatform(QPainter& painter, const ChartPlatform& platfo
 {
     QPoint screenPos = geoToScreen(platform.position);
 
-    // 检查是否在可见区域内
-    QRect visibleRect = rect().adjusted(-PLATFORM_SIZE, -PLATFORM_SIZE, PLATFORM_SIZE, PLATFORM_SIZE);
+    // 修复：扩大可见区域检查范围，避免边缘目标被过滤
+    QRect visibleRect = rect().adjusted(-PLATFORM_SIZE*2, -PLATFORM_SIZE*2,
+                                       PLATFORM_SIZE*2, PLATFORM_SIZE*2);
     if (!visibleRect.contains(screenPos)) {
+        // 调试信息
+        if (!platform.isOwnShip) {
+            qDebug() << QString("Platform %1 outside visible area: screen=(%2,%3), rect=(%4,%5,%6,%7)")
+                        .arg(platform.name)
+                        .arg(screenPos.x()).arg(screenPos.y())
+                        .arg(visibleRect.x()).arg(visibleRect.y())
+                        .arg(visibleRect.width()).arg(visibleRect.height());
+        }
         return;
     }
 
@@ -693,16 +695,21 @@ void SeaChartWidget::drawPlatform(QPainter& painter, const ChartPlatform& platfo
         painter.drawLine(0, -PLATFORM_SIZE, 0, -PLATFORM_SIZE - 15);
 
     } else {
-        // 目标舰船使用简单图标
+        // 目标舰船使用更明显的图标
         painter.setPen(pen);
         painter.setBrush(brush);
 
-        // 绘制目标图标（三角形）
+        // 修复：使用更大更明显的目标图标
         QPolygon targetShape;
-        targetShape << QPoint(0, -PLATFORM_SIZE/2)
-                    << QPoint(-PLATFORM_SIZE/2, PLATFORM_SIZE/2)
-                    << QPoint(PLATFORM_SIZE/2, PLATFORM_SIZE/2);
+        int size = PLATFORM_SIZE + 2; // 比本艇稍大一点
+        targetShape << QPoint(0, -size)
+                    << QPoint(-size, size)
+                    << QPoint(size, size);
 
+        painter.drawPolygon(targetShape);
+
+        // 外框使目标更明显
+        painter.setPen(QPen(Qt::white, 1));
         painter.drawPolygon(targetShape);
     }
 
@@ -734,15 +741,101 @@ void SeaChartWidget::drawPlatform(QPainter& painter, const ChartPlatform& platfo
 
 void SeaChartWidget::drawSonarRanges(QPainter& painter)
 {
-    if (!m_ownShip) return;
+    // *** 关键修复：增强本艇位置验证 ***
+    if (!m_ownShip) {
+        qDebug() << "Warning: No own ship found for sonar ranges drawing";
+        return;
+    }
 
     QPointF ownShipPos = m_ownShip->position;
+    double ownShipHeading = m_ownShip->heading;
+
+    // *** 修复核心：验证本艇位置的有效性 ***
+    if (qAbs(ownShipPos.x()) < 0.001 && qAbs(ownShipPos.y()) < 0.001) {
+        qDebug() << "Warning: Own ship position is (0,0), skipping sonar ranges drawing";
+        qDebug() << "Own ship details: id=" << m_ownShip->id
+                 << ", name=" << m_ownShip->name
+                 << ", position=(" << ownShipPos.x() << "," << ownShipPos.y() << ")"
+                 << ", heading=" << ownShipHeading;
+        return;
+    }
+
+    QPoint ownShipScreen = geoToScreen(ownShipPos);
+
+    // 验证屏幕坐标是否合理
+    if (!rect().adjusted(-1000, -1000, 1000, 1000).contains(ownShipScreen)) {
+        qDebug() << "Warning: Own ship screen position out of reasonable bounds:" << ownShipScreen;
+        // 不return，继续绘制，但记录警告
+    }
+
+    painter.save();
 
     for (const auto& range : m_sonarRanges) {
-        if (range.isVisible) {
-            drawSonarRange(painter, range, ownShipPos);
+        if (!range.isVisible) {
+            continue;
         }
+
+        // *** 修复：再次验证位置有效性 ***
+        if (qAbs(ownShipPos.x()) < 0.001 && qAbs(ownShipPos.y()) < 0.001) {
+            qDebug() << "Critical: Own ship position became (0,0) during sonar range drawing!";
+            break; // 立即停止绘制
+        }
+
+        painter.setPen(QPen(range.color, 2));
+        painter.setBrush(QBrush(range.color));
+
+        // 计算声纳扇形的角度范围
+        double startAngle = range.startAngle + ownShipHeading; // 相对于北向
+        double endAngle = range.endAngle + ownShipHeading;
+
+        // 标准化角度到0-360度
+        while (startAngle < 0) startAngle += 360;
+        while (startAngle >= 360) startAngle -= 360;
+        while (endAngle < 0) endAngle += 360;
+        while (endAngle >= 360) endAngle -= 360;
+
+        // 将角度转换为Qt的角度系统（以3点钟方向为0度，顺时针为正）
+        double qtStartAngle = 90 - startAngle; // 转换为Qt坐标系
+        double qtEndAngle = 90 - endAngle;
+
+        // 计算扫过的角度
+        double sweepAngle = endAngle - startAngle;
+        if (sweepAngle < 0) sweepAngle += 360;
+        if (sweepAngle > 180) sweepAngle = sweepAngle - 360; // 处理跨越边界的情况
+
+        // 将扫过角度转换为Qt坐标系（Qt中逆时针为正）
+        double qtSweepAngle = -sweepAngle;
+
+        // 计算声纳覆盖区域的半径（像素）
+        double radiusPixels = range.maxRange / m_chartScale;
+
+        // 确保半径不会太大（避免绘制超大扇形导致性能问题）
+        radiusPixels = qMin(radiusPixels, 2000.0);
+
+        // 计算扇形的边界矩形
+        QRectF boundingRect(ownShipScreen.x() - radiusPixels,
+                           ownShipScreen.y() - radiusPixels,
+                           2 * radiusPixels,
+                           2 * radiusPixels);
+
+        // 绘制扇形
+        painter.drawPie(boundingRect,
+                       qtStartAngle * 16,  // Qt需要1/16度单位
+                       qtSweepAngle * 16);
+
+        // *** 调试信息：记录绘制详情 ***
+        qDebug() << QString("Sonar %1: pos=(%2,%3), screen=(%4,%5), start=%.1f°, end=%.1f°, radius=%.1fm")
+                    .arg(range.sonarId)
+                    .arg(ownShipPos.x(), 0, 'f', 6)
+                    .arg(ownShipPos.y(), 0, 'f', 6)
+                    .arg(ownShipScreen.x())
+                    .arg(ownShipScreen.y())
+                    .arg(startAngle)
+                    .arg(endAngle)
+                    .arg(radiusPixels * m_chartScale);
     }
+
+    painter.restore();
 }
 
 void SeaChartWidget::drawSonarRange(QPainter& painter, const SonarDetectionRange& range, const QPointF& centerPos)
@@ -879,12 +972,29 @@ void SeaChartWidget::wheelEvent(QWheelEvent* event)
     event->accept();
 }
 
+
 void SeaChartWidget::contextMenuEvent(QContextMenuEvent* event)
 {
-    // *** 保存当前绘制状态，防止右键菜单干扰 ***
-    bool sonarRangesBackup[5];
-    for (int i = 0; i < m_sonarRanges.size() && i < 5; i++) {
-        sonarRangesBackup[i] = m_sonarRanges[i].isVisible;
+    // *** 保存本艇位置状态，防止被污染 ***
+    QPointF savedOwnShipPos;
+    double savedOwnShipHeading = 0.0;
+    bool hasValidOwnShip = false;
+
+    if (m_ownShip) {
+        savedOwnShipPos = m_ownShip->position;
+        savedOwnShipHeading = m_ownShip->heading;
+        hasValidOwnShip = true;
+
+        qDebug() << "Context menu: saving own ship position:" << savedOwnShipPos
+                 << "heading:" << savedOwnShipHeading;
+    }
+
+    // *** 保存声纳范围状态 ***
+    std::vector<bool> sonarRangesBackup;
+    sonarRangesBackup.reserve(m_sonarRanges.size());
+
+    for (const auto& range : m_sonarRanges) {
+        sonarRangesBackup.push_back(range.isVisible);
     }
 
     // 检查右键点击位置是否有平台
@@ -900,14 +1010,33 @@ void SeaChartWidget::contextMenuEvent(QContextMenuEvent* event)
         m_removeTargetAction->setVisible(false);
     }
 
-    // *** 显示菜单前强制更新一次，确保状态正确 ***
-    update();
+    // *** 在显示菜单前验证本艇状态 ***
+    if (m_ownShip && hasValidOwnShip) {
+        if (qAbs(m_ownShip->position.x() - savedOwnShipPos.x()) > 0.0001 ||
+            qAbs(m_ownShip->position.y() - savedOwnShipPos.y()) > 0.0001) {
+            qDebug() << "Warning: Own ship position changed before context menu!";
+            qDebug() << "Before:" << savedOwnShipPos << "Now:" << m_ownShip->position;
+        }
+    }
 
+    // 显示菜单
     m_contextMenu->exec(event->globalPos());
 
-    // *** 菜单关闭后，恢复声纳范围状态（如果被意外修改） ***
+    // *** 菜单关闭后，验证并恢复本艇状态 ***
+    if (hasValidOwnShip && m_ownShip) {
+        if (qAbs(m_ownShip->position.x()) < 0.001 && qAbs(m_ownShip->position.y()) < 0.001) {
+            qDebug() << "Critical: Own ship position was reset to (0,0) after context menu!";
+            qDebug() << "Restoring saved position:" << savedOwnShipPos;
+
+            // 恢复本艇位置
+            m_ownShip->position = savedOwnShipPos;
+            m_ownShip->heading = savedOwnShipHeading;
+        }
+    }
+
+    // *** 恢复声纳范围状态 ***
     bool needRestore = false;
-    for (int i = 0; i < m_sonarRanges.size() && i < 5; i++) {
+    for (int i = 0; i < m_sonarRanges.size() && i < sonarRangesBackup.size(); i++) {
         if (m_sonarRanges[i].isVisible != sonarRangesBackup[i]) {
             m_sonarRanges[i].isVisible = sonarRangesBackup[i];
             needRestore = true;
@@ -916,8 +1045,11 @@ void SeaChartWidget::contextMenuEvent(QContextMenuEvent* event)
 
     if (needRestore) {
         qDebug() << "Restored sonar ranges visibility after context menu";
-        update();
     }
+
+    // 强制验证并重绘
+    validateSonarRanges();
+    update();
 }
 
 // *** 坐标转换方法 ***
@@ -1103,24 +1235,42 @@ void SeaChartWidget::onCenterOnOwnShip()
 void SeaChartWidget::onAutoGenerateTargets()
 {
     // 在本艇周围随机生成几个目标
-    if (!m_ownShip) return;
+    if (!m_ownShip) {
+        qDebug() << "Error: No own ship found for auto generation";
+        return;
+    }
 
     QPointF ownPos = m_ownShip->position;
+    qDebug() << "Auto generating targets around own ship at:" << ownPos;
 
     // 生成3-5个目标
     int targetCount = 3 + (qrand() % 3);
 
-    for (int i = 0; i < targetCount; i++) {
-        // 在本艇周围 10-50 公里范围内随机生成位置
-        double distance = 10000.0 + (qrand() % 40000); // 10-50公里
-        double bearing = qrand() % 360; // 随机方位
+    // 修复：根据当前缩放级别调整生成距离
+    double maxViewDistance = m_chartScale * qMin(width(), height()) / 4; // 屏幕1/4范围
+    double minDistance = qMax(2000.0, maxViewDistance * 0.1);   // 最小2公里或视图范围的10%
+    double maxDistance = qMax(8000.0, maxViewDistance * 0.8);   // 最大8公里或视图范围的80%
 
-        // 计算目标位置
-        double bearingRad = bearing * M_PI / 180.0;
-        double deltaLat = (distance * qCos(bearingRad)) / 111320.0;
-        double deltaLon = (distance * qSin(bearingRad)) / 111320.0;
+    qDebug() << "Generation range:" << minDistance/1000.0 << "km to" << maxDistance/1000.0 << "km";
+    qDebug() << "Current chart scale:" << m_chartScale << "m/px";
+
+    QVector<ChartPlatform> newTargets; // 收集新生成的目标
+
+    for (int i = 0; i < targetCount; i++) {
+        // 修复：调整生成距离范围，确保在可视范围内
+        double distance = minDistance + (qrand() % static_cast<int>(maxDistance - minDistance));
+        double bearing = (qrand() % 360) * M_PI / 180.0; // 转换为弧度
+
+        // 修复：正确的坐标计算
+        // 注意：经度方向是x轴（东向为正），纬度方向是y轴（北向为正）
+        double deltaLat = (distance * cos(bearing)) / 111320.0;  // 北向分量
+        double deltaLon = (distance * sin(bearing)) / 111320.0;  // 东向分量
 
         QPointF targetPos(ownPos.x() + deltaLon, ownPos.y() + deltaLat);
+
+        // 验证生成的位置
+        QPoint screenPos = geoToScreen(targetPos);
+        bool inView = rect().contains(screenPos);
 
         ChartPlatform newTarget;
         newTarget.id = m_nextPlatformId++;
@@ -1132,10 +1282,31 @@ void SeaChartWidget::onAutoGenerateTargets()
         newTarget.isOwnShip = false;
         newTarget.isVisible = true;
 
+        qDebug() << QString("Generated target %1 at (%2, %3), distance=%4km, screen=(%5,%6), inView=%7")
+                    .arg(newTarget.name)
+                    .arg(targetPos.x(), 0, 'f', 6)
+                    .arg(targetPos.y(), 0, 'f', 6)
+                    .arg(distance/1000.0, 0, 'f', 1)
+                    .arg(screenPos.x()).arg(screenPos.y())
+                    .arg(inView ? "YES" : "NO");
+
         addPlatform(newTarget);
+        newTargets.append(newTarget);
     }
 
     qDebug() << "Auto generated" << targetCount << "target ships";
+
+    // 修复：生成后自动调整视图以显示所有目标
+    if (!newTargets.isEmpty()) {
+        // 延迟调整视图，确保平台已被添加
+        QTimer::singleShot(100, this, [this]() {
+            fitToTargets();
+            qDebug() << "Auto-fitted view to show all targets";
+        });
+    }
+
+    // 强制重绘
+    update();
 }
 
 void SeaChartWidget::generateAndSendPropagatedSoundData()
@@ -1151,6 +1322,91 @@ void SeaChartWidget::generateAndSendPropagatedSoundData()
             // 发出信号通知主窗口
             emit targetPlatformsUpdated(targets);
         }
+    }
+}
+
+// 强制验证并修复本艇位置
+bool SeaChartWidget::isValidPosition(const QPointF& pos) const
+{
+    // 检查是否为(0,0)
+    if (qAbs(pos.x()) < 0.001 && qAbs(pos.y()) < 0.001) {
+        return false;
+    }
+
+    // 检查是否在合理的地理坐标范围内
+    // 经度范围：-180 到 180
+    // 纬度范围：-90 到 90
+    if (qAbs(pos.x()) > 180.0 || qAbs(pos.y()) > 90.0) {
+        return false;
+    }
+
+    // 检查是否为明显的异常值（如NaN或极大值）
+    if (qIsNaN(pos.x()) || qIsNaN(pos.y()) ||
+        qIsInf(pos.x()) || qIsInf(pos.y())) {
+        return false;
+    }
+
+    return true;
+}
+
+// === 实现2：本艇位置验证和修复函数 ===
+void SeaChartWidget::validateAndFixOwnShipPosition()
+{
+    if (!m_ownShip) {
+        // 查找本艇
+        for (auto& platform : m_platforms) {
+            if (platform.isOwnShip) {
+                m_ownShip = &platform;
+                qDebug() << "Found own ship:" << platform.name << "at" << platform.position;
+                break;
+            }
+        }
+
+        if (!m_ownShip) {
+            qDebug() << "Warning: No own ship found in platform list";
+            return;
+        }
+    }
+
+    // 验证本艇位置是否有效
+    if (!isValidPosition(m_ownShip->position)) {
+        qDebug() << "Invalid own ship position detected:" << m_ownShip->position;
+
+        // 尝试从平台列表中找到有效的本艇位置
+        bool foundValidOwnShip = false;
+        for (auto& platform : m_platforms) {
+            if (platform.isOwnShip && isValidPosition(platform.position)) {
+                qDebug() << "Found valid own ship in platform list:" << platform.position;
+                m_ownShip = &platform;
+                foundValidOwnShip = true;
+                break;
+            }
+        }
+
+        // 如果没有找到有效位置，设置默认位置
+        if (!foundValidOwnShip) {
+            qDebug() << "Setting default own ship position";
+            m_ownShip->position = QPointF(DEFAULT_LON, DEFAULT_LAT); // 使用类中定义的默认坐标
+            m_ownShip->heading = 45.0; // 默认朝向东北
+
+            qDebug() << "Own ship position reset to:" << m_ownShip->position;
+        }
+    }
+
+    // 额外验证：确保本艇指针指向的是platforms数组中的有效元素
+    bool pointerValid = false;
+    for (const auto& platform : m_platforms) {
+        if (&platform == m_ownShip) {
+            pointerValid = true;
+            break;
+        }
+    }
+
+    if (!pointerValid) {
+        qDebug() << "Warning: Own ship pointer is invalid, resetting";
+        m_ownShip = nullptr;
+        // 递归调用来重新查找
+        validateAndFixOwnShipPosition();
     }
 }
 
@@ -1244,6 +1500,7 @@ void SeaChartWidget::fitToTargets()
     // 计算所有平台的边界
     double minLon = 1000, maxLon = -1000;
     double minLat = 1000, maxLat = -1000;
+    int validPlatformCount = 0;
 
     for (const auto& platform : m_platforms) {
         if (platform.isVisible) {
@@ -1251,7 +1508,13 @@ void SeaChartWidget::fitToTargets()
             maxLon = qMax(maxLon, platform.position.x());
             minLat = qMin(minLat, platform.position.y());
             maxLat = qMax(maxLat, platform.position.y());
+            validPlatformCount++;
         }
+    }
+
+    if (validPlatformCount == 0) {
+        qDebug() << "No visible platforms to fit";
+        return;
     }
 
     // 计算中心点
@@ -1260,14 +1523,22 @@ void SeaChartWidget::fitToTargets()
     // 计算合适的缩放级别
     double lonRange = maxLon - minLon;
     double latRange = maxLat - minLat;
-    double maxRange = qMax(lonRange * 111320.0, latRange * 111320.0); // 转换为米
+    double maxRangeMeters = qMax(lonRange * 111320.0, latRange * 111320.0); // 转换为米
 
-    double newScale = maxRange / (qMin(width(), height()) * 0.8); // 留20%边距
+    // 修复：确保有最小显示范围
+    maxRangeMeters = qMax(maxRangeMeters, 5000.0); // 最小5公里范围
+
+    double newScale = maxRangeMeters / (qMin(width(), height()) * 0.8); // 留20%边距
     newScale = qBound(m_minScale, newScale, m_maxScale);
 
-    setChartView(center, newScale);
+    qDebug() << QString("Fitting view: center=(%1,%2), lonRange=%3km, latRange=%4km, newScale=%5")
+                .arg(center.x(), 0, 'f', 6)
+                .arg(center.y(), 0, 'f', 6)
+                .arg(lonRange * 111.32, 0, 'f', 1)
+                .arg(latRange * 111.32, 0, 'f', 1)
+                .arg(newScale, 0, 'f', 1);
 
-    qDebug() << "Fitted view to all targets, center:" << center << "scale:" << newScale;
+    setChartView(center, newScale);
 }
 
 QString SeaChartWidget::getPlatformInfo(int platformId) const
@@ -1427,7 +1698,7 @@ void SeaChartWidget::loadConfiguration(const QString& fileName)
                 m_ownShip->speed = platform.speed;
             }
         } else {
-            // 添加目标平台
+            // 目标平台
             addPlatform(platform);
         }
 
@@ -1532,6 +1803,184 @@ double SeaChartWidget::getOwnShipHeading() const
         }
         qDebug() << "Error: No own ship found in platforms list";
         return 45.0; // 返回默认朝向
+    }
+
+    return m_ownShip->heading;
+}
+
+void SeaChartWidget::findOwnShip()
+{
+    ChartPlatform* previousOwnShip = m_ownShip;
+    m_ownShip = nullptr;
+
+    for (auto& platform : m_platforms) {
+        if (platform.isOwnShip) {
+            m_ownShip = &platform;
+            break;
+        }
+    }
+
+    if (!m_ownShip) {
+        qDebug() << "Warning: No own ship found in platform list";
+        return;
+    }
+
+    // *** 验证本艇位置的合理性 ***
+    if (qAbs(m_ownShip->position.x()) < 0.001 && qAbs(m_ownShip->position.y()) < 0.001) {
+        qDebug() << "Warning: Own ship has invalid position (0,0)";
+
+        // 如果之前有有效的本艇位置，考虑恢复
+        if (previousOwnShip &&
+            !(qAbs(previousOwnShip->position.x()) < 0.001 && qAbs(previousOwnShip->position.y()) < 0.001)) {
+            qDebug() << "Restoring previous own ship position:" << previousOwnShip->position;
+            m_ownShip->position = previousOwnShip->position;
+            m_ownShip->heading = previousOwnShip->heading;
+        } else {
+            // 设置默认位置（如果没有之前的有效位置）
+            m_ownShip->position = QPointF(120.0, 30.0); // 示例坐标
+            m_ownShip->heading = 0.0;
+            qDebug() << "Set default own ship position:" << m_ownShip->position;
+        }
+    }
+
+    qDebug() << "Own ship found: id=" << m_ownShip->id
+             << ", name=" << m_ownShip->name
+             << ", position=" << m_ownShip->position
+             << ", heading=" << m_ownShip->heading;
+}
+
+void SeaChartWidget::removeTarget()
+{
+    // 这个函数可以在右键菜单中调用来移除目标
+    // 保存本艇引用
+    ChartPlatform* ownShipBackup = m_ownShip;
+    QPointF ownShipPosBackup;
+    double ownShipHeadingBackup = 0.0;
+
+    if (ownShipBackup) {
+        ownShipPosBackup = ownShipBackup->position;
+        ownShipHeadingBackup = ownShipBackup->heading;
+    }
+
+    // 获取要删除的平台ID（从右键菜单的上下文中）
+    int platformToRemove = -1;
+
+    // 查找当前鼠标位置下的平台
+    int platformIndex = findPlatformAt(m_lastMousePos);
+    if (platformIndex >= 0 && platformIndex < m_platforms.size()) {
+        if (!m_platforms[platformIndex].isOwnShip) {
+            platformToRemove = m_platforms[platformIndex].id;
+        }
+    }
+
+    if (platformToRemove == -1) {
+        qDebug() << "No valid target to remove";
+        return;
+    }
+
+    // 移除目标
+    for (int i = 0; i < m_platforms.size(); ++i) {
+        if (m_platforms[i].id == platformToRemove && !m_platforms[i].isOwnShip) {
+            qDebug() << "Removing target:" << m_platforms[i].name;
+            m_platforms.removeAt(i);
+            break;
+        }
+    }
+
+    // *** 确保本艇指针仍然有效 ***
+    m_ownShip = nullptr; // 先清空，然后重新查找
+    bool ownShipFound = false;
+
+    for (auto& platform : m_platforms) {
+        if (platform.isOwnShip) {
+            m_ownShip = &platform;
+            ownShipFound = true;
+
+            // 验证位置是否仍然有效
+            if (!isValidPosition(m_ownShip->position) && isValidPosition(ownShipPosBackup)) {
+                qDebug() << "Restoring own ship position after target removal";
+                m_ownShip->position = ownShipPosBackup;
+                m_ownShip->heading = ownShipHeadingBackup;
+            }
+            break;
+        }
+    }
+
+    if (!ownShipFound) {
+        qDebug() << "Critical: Own ship lost after target removal!";
+        // 这种情况不应该发生，但如果发生了，尝试重新初始化本艇
+        initializeOwnShip();
+    }
+
+    // 通知目标列表更新
+    emit targetPlatformsUpdated(getTargetPlatforms());
+
+    // 强制重绘
+    update();
+}
+
+QPointF SeaChartWidget::getOwnShipPositionSafe() const
+{
+    // 先验证本艇指针
+    if (!m_ownShip) {
+        qDebug() << "Warning: m_ownShip is null, returning default position";
+        return QPointF(DEFAULT_LON, DEFAULT_LAT);
+    }
+
+    // 验证指针有效性
+    bool isValidPointer = false;
+    for (const auto& platform : m_platforms) {
+        if (&platform == m_ownShip && platform.isOwnShip) {
+            isValidPointer = true;
+            break;
+        }
+    }
+
+    if (!isValidPointer) {
+        qDebug() << "Warning: m_ownShip pointer is invalid, searching for own ship";
+        for (const auto& platform : m_platforms) {
+            if (platform.isOwnShip) {
+                return platform.position;
+            }
+        }
+        qDebug() << "Error: No own ship found in platforms list";
+        return QPointF(DEFAULT_LON, DEFAULT_LAT);
+    }
+
+    // 验证位置有效性
+    if (!isValidPosition(m_ownShip->position)) {
+        qDebug() << "Warning: Own ship has invalid position:" << m_ownShip->position;
+        return QPointF(DEFAULT_LON, DEFAULT_LAT);
+    }
+
+    return m_ownShip->position;
+}
+
+// === 实现5：增强的本艇朝向获取函数（安全版本） ===
+double SeaChartWidget::getOwnShipHeadingSafe() const
+{
+    if (!m_ownShip) {
+        qDebug() << "Warning: m_ownShip is null, returning default heading";
+        return 45.0; // 默认朝向
+    }
+
+    // 验证指针有效性
+    bool isValidPointer = false;
+    for (const auto& platform : m_platforms) {
+        if (&platform == m_ownShip && platform.isOwnShip) {
+            isValidPointer = true;
+            break;
+        }
+    }
+
+    if (!isValidPointer) {
+        qDebug() << "Warning: m_ownShip pointer is invalid, searching for own ship";
+        for (const auto& platform : m_platforms) {
+            if (platform.isOwnShip) {
+                return platform.heading;
+            }
+        }
+        return 45.0; // 默认朝向
     }
 
     return m_ownShip->heading;

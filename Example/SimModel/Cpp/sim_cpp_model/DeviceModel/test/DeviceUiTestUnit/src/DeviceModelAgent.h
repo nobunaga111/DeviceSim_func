@@ -131,7 +131,7 @@ public:
     CSimIntegrationLogger* getLogger() override;
 
     /**
-    * 添加订阅数据 - 接口方法
+    * 订阅数据 - 接口方法
     * @param topic 主题
     * @param platformId 平台ID
     * @param data 数据指针
@@ -139,7 +139,7 @@ public:
     void addSubscribedData(const char* topic, int64 platformId, CSimData* data);
 
     /**
-    * 添加订阅数据 - 重载方法，支持组件ID
+    * 订阅数据 - 重载方法，支持组件ID
     * @param topic 主题
     * @param platformId 平台ID
     * @param componentId 组件ID

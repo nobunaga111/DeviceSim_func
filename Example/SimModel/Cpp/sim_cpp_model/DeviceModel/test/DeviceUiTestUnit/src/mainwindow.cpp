@@ -161,7 +161,7 @@ void MainWindow::createSeaChartPanel()
     seaChartLayout->setContentsMargins(0, 0, 0, 0);
     seaChartLayout->addWidget(m_seaChartWidget);
 
-    // 添加到主分割器
+    // 主分割器
     m_mainSplitter->addWidget(m_seaChartPanel);
 }
 
@@ -172,7 +172,7 @@ void MainWindow::createControlPanel()
     m_controlPanel->setMinimumWidth(400);
     m_controlPanel->setMaximumWidth(500);
 
-    // 添加到右侧分割器
+    // 右侧分割器
     m_rightSplitter->addWidget(m_controlPanel);
 
     // 控制面板将在createSonarStatusPanel中填充内容
@@ -184,6 +184,37 @@ void MainWindow::createSonarStatusPanel()
     QVBoxLayout* controlLayout = new QVBoxLayout(m_controlPanel);
     controlLayout->setSpacing(10);
     controlLayout->setContentsMargins(10, 10, 10, 10);
+
+
+
+    QPushButton* debugButton = new QPushButton("调试：显示所有目标");
+    debugButton->setStyleSheet("background-color: lightcoral;");
+    connect(debugButton, &QPushButton::clicked, [this]() {
+       if (m_seaChartWidget) {
+           // 输出所有平台信息
+           auto targets = m_seaChartWidget->getTargetPlatforms();
+           addLog(QString("=== 调试信息 ==="));
+           addLog(QString("目标数量: %1").arg(targets.size()));
+
+           for (const auto& target : targets) {
+               QPoint screenPos = m_seaChartWidget->geoToScreen(target.position);
+               addLog(QString("目标: %1, 位置: (%.6f, %.6f), 屏幕: (%2, %3), 可见: %4")
+                      .arg(target.name)
+                      .arg(target.position.x(), 0, 'f', 6)
+                      .arg(target.position.y(), 0, 'f', 6)
+                      .arg(screenPos.x())
+                      .arg(screenPos.y())
+                      .arg(target.isVisible ? "是" : "否"));
+           }
+
+           // 自动调整视图
+           m_seaChartWidget->fitToTargets();
+           addLog("已自动调整视图显示所有目标");
+       }
+    });
+
+    controlLayout->addWidget(debugButton);
+
 
     // === 声纳状态控制组 ===
     m_sonarStatusGroup = new QGroupBox("声纳阵列状态与控制");
@@ -324,7 +355,7 @@ void MainWindow::createSonarStatusPanel()
 
     controlLayout->addWidget(m_equationResultsGroup);
 
-    // 添加弹性空间
+    // 弹性空间
     controlLayout->addStretch(1);
 }
 
@@ -371,7 +402,7 @@ void MainWindow::createLogPanel()
 
     logLayout->addLayout(logButtonLayout);
 
-    // 添加到右侧分割器
+    // 右侧分割器
     m_rightSplitter->addWidget(logPanel);
 }
 
@@ -396,7 +427,10 @@ void MainWindow::initializeTimers()
 
 void MainWindow::onSonarSwitchToggled(int sonarID, bool enabled)
 {
-    if (sonarID < 0 || sonarID >= 4) return;
+    if (sonarID < 0 || sonarID >= 4)
+    {
+        return;
+    }
 
     m_sonarEnabledStates[sonarID] = enabled;
 
@@ -517,7 +551,7 @@ void MainWindow::addLog(const QString& message)
     // 获取当前时间
     QString timestamp = QDateTime::currentDateTime().toString("[hh:mm:ss.zzz] ");
 
-    // 添加带时间戳的日志
+    // 带时间戳的日志
     m_logTextEdit->append(timestamp + message);
 
     // 滚动到底部
@@ -712,14 +746,13 @@ CMsg_PropagatedContinuousSoundListStruct MainWindow::createPropagatedSoundData(c
         baseSignalLevel = std::max(40.0f, std::min(85.0f, baseSignalLevel)); // 限制在40-85dB范围
 
         for (int i = 0; i < 5296; i++) {
-            // 添加一些随机变化和频率特性
+            // 一些随机变化和频率特性
             float freqFactor = 1.0f + 0.1f * sin(i * 0.01f); // 模拟频率响应
             float randomVariation = signalDist(gen) * 0.1f - 0.05f; // ±5%随机变化
 
             soundData.spectrumData[i] = baseSignalLevel * freqFactor + randomVariation;
         }
 
-        // 添加到列表
         soundListStruct.propagatedContinuousList.push_back(soundData);
 
         addLog(QString("目标 %1: 距离=%2km, 方位=%3°, 信号强度=%4dB")
@@ -810,7 +843,7 @@ CData_PlatformSelfSound* MainWindow::createPlatformSelfSoundData()
 
         // 生成频谱数据
         for (int i = 0; i < 5296; i++) {
-            // 添加频率相关的噪声特性
+            // 频率相关的噪声特性
             float freqFactor = 1.0f - 0.3f * (i / 5296.0f); // 高频噪声衰减
             spectrumStruct.spectumData[i] = noiseDist(gen) * freqFactor;
         }
@@ -965,7 +998,7 @@ QString MainWindow::formatSonarResults(const std::map<int, std::vector<DeviceMod
         resultText += "\n";
     }
 
-    // 添加统计信息
+    // 统计信息
     resultText += QString("总计有效目标检测: %1\n").arg(totalValidTargets);
     resultText += "\n说明：\n";
     resultText += "• X值越大表示目标信号相对噪声越强\n";
@@ -994,24 +1027,24 @@ void MainWindow::generateAndSendPlatformMotionData()
         double ownShipHeading = m_seaChartWidget->getOwnShipHeading();
         double ownShipSpeed = m_seaChartWidget->getOwnShipSpeed();
 
-        // 创建平台机动数据
-        CData_Motion* motionData = new CData_Motion();
-        motionData->name = nullptr;
-        motionData->action = true;
-        motionData->isPending = false;
-        motionData->x = ownShipPos.x();           // 经度
-        motionData->y = ownShipPos.y();           // 纬度
-        motionData->z = -200.0;                   // 深度（水下）
-        motionData->curSpeed = ownShipSpeed;      // 速度（节）
-        motionData->rotation = ownShipHeading;    // 关键：从海图获取的实际船头朝向！
-        motionData->mVerticalSpeed = 0.0;
-        motionData->mAcceleration = 0.0;
-        motionData->roll = 0.0;
-        motionData->yaw = 0.0;
-        motionData->pitch = 0.0;
-        motionData->mRollVel = 0.0;
-        motionData->mPitchVel = 0.0;
-        motionData->mYawVel = 0.0;
+        // 创建平台机动数据 - 修复：使用栈分配而不是堆分配
+        CData_Motion motionData; // 修改：不使用new
+        motionData.name = nullptr;
+        motionData.action = true;
+        motionData.isPending = false;
+        motionData.x = ownShipPos.x();
+        motionData.y = ownShipPos.y();
+        motionData.z = -200.0;
+        motionData.curSpeed = ownShipSpeed;
+        motionData.rotation = ownShipHeading;
+        motionData.mVerticalSpeed = 0.0;
+        motionData.mAcceleration = 0.0;
+        motionData.roll = 0.0;
+        motionData.yaw = 0.0;
+        motionData.pitch = 0.0;
+        motionData.mRollVel = 0.0;
+        motionData.mPitchVel = 0.0;
+        motionData.mYawVel = 0.0;
 
         // 创建 CSimData 包装器
         CSimData* simData = new CSimData();
@@ -1020,7 +1053,10 @@ void MainWindow::generateAndSendPlatformMotionData()
         simData->sender = m_agent->getPlatformEntity()->id;
         simData->receiver = m_agent->getPlatformEntity()->id;
         simData->componentId = 1;
-        simData->data = motionData;
+
+        // 修复：创建motionData的深拷贝
+        CData_Motion* motionDataCopy = new CData_Motion(motionData);
+        simData->data = motionDataCopy;
         simData->length = sizeof(CData_Motion);
         memcpy(simData->topic, Data_Motion, strlen(Data_Motion) + 1);
 
