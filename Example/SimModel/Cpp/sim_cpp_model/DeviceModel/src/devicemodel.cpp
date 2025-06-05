@@ -351,13 +351,17 @@ void DeviceModel::step(int64 curTime, int32 step)
     }
 
     // 获取平台自噪声数据
-    CSimData* selfSoundData = m_agent->getSubscribeSimData(Data_PlatformSelfSound, m_agent->getPlatformEntity()->id);
-    if (selfSoundData) {
-        LOG_INFOF("Retrieved platform self sound data with timestamp: %lld", selfSoundData->time);
-        handlePlatformSelfSound(selfSoundData);
-    } else {
-        LOG_WARN("Failed to retrieve platform self sound data in step()");
-    }
+    int64 platformId = m_agent->getPlatformEntity()->id;
+        LOG_INFOF("Attempting to get platform self sound data for platformId: %lld", platformId);
+
+        CSimData* selfSoundData = m_agent->getSubscribeSimData(Data_PlatformSelfSound, platformId);
+        if (selfSoundData) {
+            LOG_INFOF("✅ Retrieved platform self sound data with timestamp: %lld", selfSoundData->time);
+            handlePlatformSelfSound(selfSoundData);
+        } else {
+            LOG_WARN("❌ Failed to retrieve platform self sound data in step()");
+            LOG_WARNF("Topic: %s, PlatformId: %lld", Data_PlatformSelfSound, platformId);
+        }
 
 
     // 等待进一步处理

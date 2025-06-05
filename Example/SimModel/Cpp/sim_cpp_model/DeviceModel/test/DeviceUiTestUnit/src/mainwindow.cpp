@@ -963,13 +963,23 @@ void MainWindow::onSendCompleteTestDataClicked()
         memcpy(selfSoundData->topic, Data_PlatformSelfSound, strlen(Data_PlatformSelfSound) + 1);
 
         // *** 确认时间戳被正确设置 ***
-        addLog(QString("平台自噪声数据创建时时间戳: %1").arg(selfSoundData->time));
+        int64 platformId = m_agent->getPlatformEntity()->id;
+        addLog(QString("准备存储平台自噪声数据: platformId=%1, time=%2").arg(platformId).arg(selfSoundData->time));
 
-        m_agent->addSubscribedData(Data_PlatformSelfSound,
-                                   m_agent->getPlatformEntity()->id,
-                                   selfSoundData);
+        m_agent->addSubscribedData(Data_PlatformSelfSound, platformId, selfSoundData);
 
-        addLog("✅ 已准备平台自噪声数据并添加到订阅数据中");
+        // *** 验证数据是否正确存储 ***
+        CSimData* retrievedData = m_agent->getSubscribeSimData(Data_PlatformSelfSound, platformId);
+        if (retrievedData) {
+            addLog(QString("✅ 验证：平台自噪声数据已成功存储，时间戳: %1").arg(retrievedData->time));
+        } else {
+            addLog("❌ 验证失败：无法获取刚存储的平台自噪声数据！");
+        }
+
+
+
+
+
 
         // 3. 发送传播后连续声数据
         CMsg_PropagatedContinuousSoundListStruct continuousSound;
@@ -1057,13 +1067,13 @@ void MainWindow::onSendCompleteTestDataClicked()
 
 
 
-    QTimer::singleShot(100, this, [this]() {
-        if (m_component) {
-            int64 currentTime = QDateTime::currentMSecsSinceEpoch();
-            m_component->step(currentTime, 1000);
-            addLog("🔄 额外触发了一次 step() 方法");
-        }
-    });
+//    QTimer::singleShot(100, this, [this]() {
+//        if (m_component) {
+//            int64 currentTime = QDateTime::currentMSecsSinceEpoch();
+//            m_component->step(currentTime, 1000);
+//            addLog("🔄 额外触发了一次 step() 方法");
+//        }
+//    });
 }
 
 

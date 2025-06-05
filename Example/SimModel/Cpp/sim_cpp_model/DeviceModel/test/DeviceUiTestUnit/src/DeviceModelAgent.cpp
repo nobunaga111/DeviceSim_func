@@ -58,15 +58,32 @@ void DeviceModelAgent::publishSimData(CSimData* simData)
 CSimData* DeviceModelAgent::getSubscribeSimData(const char* topic, int64 platformId)
 {
     if (!topic) {
+        std::cout << "Error: topic is null in getSubscribeSimData" << std::endl;
         return nullptr;
     }
 
     std::string key = std::string(topic) + "_" + std::to_string(platformId);
 
-    if (m_subscribedData.find(key) != m_subscribedData.end()) {
-        return m_subscribedData[key];
+    // *** 详细调试信息 ***
+    std::cout << "Looking for data with key: " << key << std::endl;
+    std::cout << "Available keys in m_subscribedData:" << std::endl;
+    for (const auto& pair : m_subscribedData) {
+        std::cout << "  Key: " << pair.first << ", Data ptr: " << pair.second;
+        if (pair.second) {
+            std::cout << ", Timestamp: " << pair.second->time;
+        }
+        std::cout << std::endl;
     }
 
+    auto it = m_subscribedData.find(key);
+    if (it != m_subscribedData.end()) {
+        CSimData* result = it->second;
+        std::cout << "Found data for key: " << key << ", timestamp: "
+                  << (result ? result->time : -1) << std::endl;
+        return result;
+    }
+
+    std::cout << "No data found for key: " << key << std::endl;
     return nullptr;
 }
 
@@ -317,7 +334,13 @@ void DeviceModelAgent::addSubscribedData(const char* topic, int64 platformId, CS
         // 存储新数据
         m_subscribedData[key] = data;
 
-        std::cout << "Added data with key: " << key << std::endl;
+        // *** 详细调试信息 ***
+        std::cout << "Successfully stored data with key: " << key
+                  << ", timestamp: " << data->time
+                  << ", data ptr: " << data
+                  << ", topic: " << topic
+                  << ", platformId: " << platformId << std::endl;
+
     } catch (const std::exception& e) {
         std::cout << "Exception in addSubscribedData: " << e.what() << std::endl;
     } catch (...) {
