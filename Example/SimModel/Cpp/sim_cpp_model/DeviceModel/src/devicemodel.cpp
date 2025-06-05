@@ -12,6 +12,8 @@
 #include "common/define.h"
 #include <QString>
 
+constexpr const double DeviceModel::MAX_FREQUENCY_KHZ;
+
 
 DeviceModel::DeviceModel()
 {
