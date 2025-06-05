@@ -11,6 +11,7 @@
 #include <random>
 #include "common/define.h"
 #include <QString>
+#include <QDateTime>
 
 constexpr const double DeviceModel::MAX_FREQUENCY_KHZ;
 
@@ -327,8 +328,6 @@ void DeviceModel::step(int64 curTime, int32 step)
     LOG_INFO("steeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeep");
     (void)step;
 
-    std::cout << __FUNCTION__ << ":" << __LINE__ << "stepstep" << std::endl;
-
     if (!m_agent || !m_initialized)
     {
         return;
@@ -354,9 +353,11 @@ void DeviceModel::step(int64 curTime, int32 step)
     // 获取平台自噪声数据
     CSimData* selfSoundData = m_agent->getSubscribeSimData(Data_PlatformSelfSound, m_agent->getPlatformEntity()->id);
     if (selfSoundData) {
+        LOG_INFOF("Retrieved platform self sound data with timestamp: %lld", selfSoundData->time);
         handlePlatformSelfSound(selfSoundData);
+    } else {
+        LOG_WARN("Failed to retrieve platform self sound data in step()");
     }
-
 
 
     // 等待进一步处理
@@ -487,8 +488,9 @@ void DeviceModel::updatePropagatedSoundCache(CSimMessage* simMessage)
         soundIndex++;
     }
 
-    // 更新时间戳
-    m_equationCache.lastPropagatedSoundTime = curTime;
+    // *** 使用消息中的时间戳而不是成员变量 curTime ***
+    m_equationCache.lastPropagatedSoundTime = simMessage->time;
+    LOG_INFOF("Propagated sound time updated to: %lld", simMessage->time);
 }
 
 void DeviceModel::updatePlatformSelfSoundCache(CSimData* simData)
@@ -530,8 +532,9 @@ void DeviceModel::updatePlatformSelfSoundCache(CSimData* simData)
         LOG_INFOF("Updated platform self sound cache for sonar %d", sonarID);
     }
 
-    // 更新时间戳
-    m_equationCache.lastPlatformSoundTime = curTime;
+    // *** 使用数据中的时间戳而不是成员变量 curTime ***
+    m_equationCache.lastPlatformSoundTime = simData->time;
+    LOG_INFOF("Platform self sound time updated to: %lld", simData->time);
 }
 
 void DeviceModel::updateEnvironmentNoiseCache(CSimMessage* simMessage)
@@ -561,8 +564,9 @@ void DeviceModel::updateEnvironmentNoiseCache(CSimMessage* simMessage)
     LOG_INFOF("Updated environment noise cache for all sonars, spectrum size: %zu",
               spectrum.size());
 
-    // 更新时间戳
-    m_equationCache.lastEnvironmentNoiseTime = curTime;
+    // *** 使用消息中的时间戳而不是成员变量 curTime ***
+    m_equationCache.lastEnvironmentNoiseTime = simMessage->time;
+    LOG_INFOF("Environment noise time updated to: %lld", simMessage->time);
 }
 
 double DeviceModel::calculateSpectrumSum(const std::vector<float>& spectrum)
@@ -648,8 +652,10 @@ double DeviceModel::calculateSonarEquation(int sonarID)
 
 bool DeviceModel::isEquationDataValid(int sonarID)
 {
+    // *** 修正：使用当前真实时间而不是成员变量 curTime ***
+    int64 currentTime = QDateTime::currentMSecsSinceEpoch();  // 使用当前真实时间
+
     // 检查数据时效性（5秒内更新）
-    int64 currentTime = curTime;
     bool propagatedValid = (currentTime - m_equationCache.lastPropagatedSoundTime) <= DATA_UPDATE_INTERVAL_MS;
     bool platformValid = (currentTime - m_equationCache.lastPlatformSoundTime) <= DATA_UPDATE_INTERVAL_MS;
     bool environmentValid = (currentTime - m_equationCache.lastEnvironmentNoiseTime) <= DATA_UPDATE_INTERVAL_MS;
@@ -666,16 +672,15 @@ bool DeviceModel::isEquationDataValid(int sonarID)
     bool dataExists = propagatedExists && platformExists && environmentExists;
 
     if (!dataValid) {
-        LOG_DEBUGF("Data time validity check for sonar %d: prop=%s, plat=%s, env=%s",
-                   sonarID,
-                   propagatedValid ? "OK" : "STALE",
-                   platformValid ? "OK" : "STALE",
-                   environmentValid ? "OK" : "STALE");
+        LOG_DEBUGF("Data time validity check for sonar %d: current=%lld, prop=%lld(diff=%lld), plat=%lld(diff=%lld), env=%lld(diff=%lld)",
+                   sonarID, currentTime,
+                   m_equationCache.lastPropagatedSoundTime, currentTime - m_equationCache.lastPropagatedSoundTime,
+                   m_equationCache.lastPlatformSoundTime, currentTime - m_equationCache.lastPlatformSoundTime,
+                   m_equationCache.lastEnvironmentNoiseTime, currentTime - m_equationCache.lastEnvironmentNoiseTime);
     }
 
     return dataValid && dataExists;
 }
-
 void DeviceModel::performSonarEquationCalculation()
 {
     LOG_DEBUG("Performing sonar equation calculation for all sonars");
@@ -688,6 +693,30 @@ void DeviceModel::performSonarEquationCalculation()
             stateIt->second.arrayWorkingState &&
             stateIt->second.passiveWorkingState) {
 
+            LOG_INFOF("Sonar %d is enabled, calculating equation", sonarID);
+
+            // *** 详细的数据检查 ***
+            bool propagatedExists = (m_equationCache.propagatedContinuousSpectrum.find(sonarID) !=
+                                    m_equationCache.propagatedContinuousSpectrum.end());
+            bool platformExists = (m_equationCache.platformSelfSoundSpectrum.find(sonarID) !=
+                                  m_equationCache.platformSelfSoundSpectrum.end());
+            bool environmentExists = (m_equationCache.environmentNoiseSpectrum.find(sonarID) !=
+                                     m_equationCache.environmentNoiseSpectrum.end());
+
+            LOG_INFOF("Sonar %d data existence: propagated=%s, platform=%s, environment=%s",
+                      sonarID,
+                      propagatedExists ? "YES" : "NO",
+                      platformExists ? "YES" : "NO",
+                      environmentExists ? "YES" : "NO");
+
+            // 检查时间戳
+            int64 currentTime = curTime;
+            LOG_INFOF("Time check for sonar %d: current=%lld, prop=%lld, plat=%lld, env=%lld",
+                      sonarID, currentTime,
+                      m_equationCache.lastPropagatedSoundTime,
+                      m_equationCache.lastPlatformSoundTime,
+                      m_equationCache.lastEnvironmentNoiseTime);
+
             // 计算声纳方程
             double result = calculateSonarEquation(sonarID);
 
@@ -696,9 +725,12 @@ void DeviceModel::performSonarEquationCalculation()
 
             if (result != 0.0) {  // 只有有效结果才记录
                 LOG_INFOF("Sonar %d equation calculated: X = %.2f", sonarID, result);
+            } else {
+                LOG_WARNF("Sonar %d equation calculation returned 0.0", sonarID);
             }
         } else {
             // 声纳未启用，清除旧结果
+            LOG_INFOF("Sonar %d is disabled or not found", sonarID);
             m_equationCache.equationResults.erase(sonarID);
         }
     }

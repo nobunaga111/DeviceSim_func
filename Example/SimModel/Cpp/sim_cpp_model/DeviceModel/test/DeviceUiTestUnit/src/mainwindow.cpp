@@ -768,6 +768,24 @@ void MainWindow::onShowEquationResultsClicked()
         return;
     }
 
+
+
+
+
+    // *** 详细的调试信息 ***
+        addLog("=== 开始调试声纳方程计算状态 ===");
+
+        // 检查每个声纳的数据有效性
+        for (int sonarID = 0; sonarID < 4; sonarID++) {
+            bool dataValid = deviceModel->isEquationDataValid(sonarID);
+            addLog(QString("声纳%1数据有效性: %2").arg(sonarID).arg(dataValid ? "有效" : "无效"));
+
+            // 检查声纳状态
+            // 这里我们需要添加一个方法来获取声纳状态，或者直接检查
+        }
+
+
+
     // 获取所有声纳的计算结果
     auto results = deviceModel->getAllSonarEquationResults();
 
@@ -842,6 +860,32 @@ void MainWindow::onSendCompleteTestDataClicked()
         }
         envNoise.acousticVel = 1500.0f;
 
+
+
+        // *** 打印环境噪声频谱数据 ***
+        addLog("=== 环境噪声频谱数据 ===");
+        QString envSpectrumInfo = "前100个值: ";
+        for (int i = 0; i < 100; i++) {
+            envSpectrumInfo += QString::number(envNoise.spectrumData[i], 'f', 2) + " ";
+        }
+        addLog(envSpectrumInfo);
+
+        float envSum = 0.0f, envMin = envNoise.spectrumData[0], envMax = envNoise.spectrumData[0];
+        for (int i = 0; i < 5296; i++) {
+            envSum += envNoise.spectrumData[i];
+            if (envNoise.spectrumData[i] < envMin) envMin = envNoise.spectrumData[i];
+            if (envNoise.spectrumData[i] > envMax) envMax = envNoise.spectrumData[i];
+        }
+        addLog(QString("环境噪声统计: 总和=%1, 平均=%2, 最小=%3, 最大=%4")
+               .arg(QString::number(envSum, 'f', 2))
+               .arg(QString::number(envSum/5296, 'f', 2))
+               .arg(QString::number(envMin, 'f', 2))
+               .arg(QString::number(envMax, 'f', 2)));
+
+
+
+
+
         CSimMessage envMsg;
         envMsg.dataFormat = STRUCT;
         envMsg.time = QDateTime::currentMSecsSinceEpoch();
@@ -871,12 +915,46 @@ void MainWindow::onSendCompleteTestDataClicked()
             }
 
             platformSelfSound->selfSoundSpectrumList.push_back(spectrumStruct);
+
+
+
+
+
+
+
+            // *** 打印每个声纳的平台自噪声频谱数据 ***
+           addLog(QString("=== 平台自噪声频谱数据 (声纳%1) ===").arg(sonarID));
+           QString selfSpectrumInfo = "前100个值: ";
+           for (int i = 0; i < 100; i++) {
+               selfSpectrumInfo += QString::number(spectrumStruct.spectumData[i], 'f', 2) + " ";
+           }
+           addLog(selfSpectrumInfo);
+
+           float selfSum = 0.0f, selfMin = spectrumStruct.spectumData[0], selfMax = spectrumStruct.spectumData[0];
+           for (int i = 0; i < 5296; i++) {
+               selfSum += spectrumStruct.spectumData[i];
+               if (spectrumStruct.spectumData[i] < selfMin) selfMin = spectrumStruct.spectumData[i];
+               if (spectrumStruct.spectumData[i] > selfMax) selfMax = spectrumStruct.spectumData[i];
+           }
+           addLog(QString("声纳%1自噪声统计: 总和=%2, 平均=%3, 最小=%4, 最大=%5")
+                  .arg(sonarID)
+                  .arg(QString::number(selfSum, 'f', 2))
+                  .arg(QString::number(selfSum/5296, 'f', 2))
+                  .arg(QString::number(selfMin, 'f', 2))
+                  .arg(QString::number(selfMax, 'f', 2)));
+
+
+
+
+
+
         }
 
         // 创建 CSimData 包装器
         CSimData* selfSoundData = new CSimData();
         selfSoundData->dataFormat = STRUCT;
-        selfSoundData->time = QDateTime::currentMSecsSinceEpoch();
+        int64 currentTime = QDateTime::currentMSecsSinceEpoch();
+        selfSoundData->time = currentTime;  // 确保时间戳被设置
         selfSoundData->sender = m_agent->getPlatformEntity()->id;
         selfSoundData->receiver = m_agent->getPlatformEntity()->id;
         selfSoundData->componentId = 1;
@@ -884,7 +962,9 @@ void MainWindow::onSendCompleteTestDataClicked()
         selfSoundData->length = sizeof(*platformSelfSound);
         memcpy(selfSoundData->topic, Data_PlatformSelfSound, strlen(Data_PlatformSelfSound) + 1);
 
-        // *** 关键：将数据添加到代理的订阅数据中 ***
+        // *** 确认时间戳被正确设置 ***
+        addLog(QString("平台自噪声数据创建时时间戳: %1").arg(selfSoundData->time));
+
         m_agent->addSubscribedData(Data_PlatformSelfSound,
                                    m_agent->getPlatformEntity()->id,
                                    selfSoundData);
@@ -910,6 +990,38 @@ void MainWindow::onSendCompleteTestDataClicked()
             }
 
             continuousSound.propagatedContinuousList.push_back(soundData);
+
+
+
+
+
+            // *** 打印每个传播声的频谱数据 ***
+            addLog(QString("=== 传播声频谱数据 (目标%1) ===").arg(sonarID));
+            QString propSpectrumInfo = "前100个值: ";
+            for (int i = 0; i < 100; i++) {
+                propSpectrumInfo += QString::number(soundData.spectrumData[i], 'f', 2) + " ";
+            }
+            addLog(propSpectrumInfo);
+
+            float propSum = 0.0f, propMin = soundData.spectrumData[0], propMax = soundData.spectrumData[0];
+            for (int i = 0; i < 5296; i++) {
+                propSum += soundData.spectrumData[i];
+                if (soundData.spectrumData[i] < propMin) propMin = soundData.spectrumData[i];
+                if (soundData.spectrumData[i] > propMax) propMax = soundData.spectrumData[i];
+            }
+            addLog(QString("目标%1传播声统计: 总和=%2, 平均=%3, 最小=%4, 最大=%5, 距离=%6m, 方位=%7°")
+                   .arg(sonarID)
+                   .arg(QString::number(propSum, 'f', 2))
+                   .arg(QString::number(propSum/5296, 'f', 2))
+                   .arg(QString::number(propMin, 'f', 2))
+                   .arg(QString::number(propMax, 'f', 2))
+                   .arg(QString::number(soundData.targetDistance, 'f', 1))
+                   .arg(QString::number(soundData.arrivalSideAngle, 'f', 1)));
+
+
+
+
+
         }
 
         CSimMessage continuousMsg;
@@ -925,14 +1037,33 @@ void MainWindow::onSendCompleteTestDataClicked()
         m_component->onMessage(&continuousMsg);
         addLog("✅ 已发送传播后连续声数据");
 
+        // *** 关键步骤：手动触发 step() 方法让 DeviceModel 获取订阅数据 ***
+        currentTime = QDateTime::currentMSecsSinceEpoch();
+        int32 stepInterval = 1000;  // 1秒步长
+
+        m_component->step(currentTime, stepInterval);
+        addLog("✅ 已触发 step() 方法，DeviceModel 现在可以获取平台自噪声数据了");
+
         addLog("🎉 完整测试数据发送完成！");
-        addLog("请等待2-3秒后点击\"显示计算结果\"查看声纳方程计算结果");
+        addLog("所有三种数据（环境噪声、平台自噪声、传播声）都已准备就绪");
+        addLog("点击\"显示计算结果\"查看声纳方程计算结果");
 
     } catch(const std::exception& e) {
         addLog(QString("❌ 发送测试数据时出错: %1").arg(e.what()));
     } catch(...) {
         addLog("❌ 发送测试数据时发生未知错误");
     }
+
+
+
+
+    QTimer::singleShot(100, this, [this]() {
+        if (m_component) {
+            int64 currentTime = QDateTime::currentMSecsSinceEpoch();
+            m_component->step(currentTime, 1000);
+            addLog("🔄 额外触发了一次 step() 方法");
+        }
+    });
 }
 
 

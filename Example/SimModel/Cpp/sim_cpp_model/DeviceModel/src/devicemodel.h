@@ -245,7 +245,7 @@ private:
 
     // 声纳方程计算常量
     static const int SPECTRUM_DATA_SIZE = 5296;           // 频谱数据大小
-    static const int DATA_UPDATE_INTERVAL_MS = 5000;     // 数据更新间隔(ms)
+    static const int DATA_UPDATE_INTERVAL_MS = 50000;     // 数据更新间隔(ms)
     static constexpr const double MAX_FREQUENCY_KHZ = 5.0;         // DI计算的最大频率(kHz)
 
     // 为4个声纳位置预设DI参数 (可通过setDIParameters修改)
