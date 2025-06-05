@@ -415,7 +415,7 @@ struct C_PropagatedInstantSoundStruct
     float arrivalSideAngle;					//波达舷角
     float arrivalPitchAngle;				//波达俯仰角
     double lastTime;						//持续时间
-    float spectrumData[5296];				//频谱数据	10Hz~40kHz,间隔2Hz(10Hz-10kHz)、间隔1kHz(10kHz-40kHz)
+    float spectrumData[5296];				//频谱数据	10Hz~40kHz,    间隔2Hz(10Hz-10kHz)、间隔1kHz(10kHz-40kHz)
     C_PropagatedInstantSoundStruct() : targetDistance(0.0)
         , trrivalTime(0)
         , arrivalSideAngle(0.0)

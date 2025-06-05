@@ -245,15 +245,15 @@ private:
 
     // 声纳方程计算常量
     static const int SPECTRUM_DATA_SIZE = 5296;           // 频谱数据大小
-    static const int DATA_UPDATE_INTERVAL_MS = 50000;     // 数据更新间隔(ms)
+    static const int DATA_UPDATE_INTERVAL_MS = 5000;     // 数据更新间隔(ms)
     static constexpr const double MAX_FREQUENCY_KHZ = 5.0;         // DI计算的最大频率(kHz)
 
     // 为4个声纳位置预设DI参数 (可通过setDIParameters修改)
     std::map<int, DIParameters> m_diParameters = {
-        {0, {3.0, 9.5}},  // 艏端声纳: f=3kHz, offset=9.5
-        {1, {3.2, 9.6}},  // 舷侧声纳: f=3.2kHz, offset=9.6
-        {2, {2.8, 9.4}},  // 粗拖声纳: f=2.8kHz, offset=9.4
-        {3, {3.5, 9.7}}   // 细拖声纳: f=3.5kHz, offset=9.7
+        {0, {5.0, 19.5}},  // 艏端声纳: f=3kHz, offset=9.5
+        {1, {3.0, 25.6}},  // 舷侧声纳: f=3.2kHz, offset=9.6
+        {2, {0.5, 26}},  // 粗拖声纳: f=2.8kHz, offset=9.4
+        {3, {0.3, 27}}   // 细拖声纳: f=3.5kHz, offset=9.7
     };
 };
 

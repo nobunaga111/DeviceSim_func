@@ -600,10 +600,23 @@ double DeviceModel::calculateDI(int sonarID)
     const DIParameters& params = m_diParameters[sonarID];
     double frequency = std::min(params.frequency_khz, MAX_FREQUENCY_KHZ);  // 限制5kHz上限
 
-    // DI = 20lgf + offset
+    // 根据声纳类型使用不同的计算公式
+    double multiplier;
+    if (sonarID == 0 || sonarID == 1) {
+        // 艏端声纳(ID=0)和舷侧声纳(ID=1): DI = 20lg(f) + offset
+        multiplier = 20.0;
+    } else if (sonarID == 2 || sonarID == 3) {
+        // 粗拖声纳(ID=2)和细拖声纳(ID=3): DI = 10lg(f) + offset
+        multiplier = 10.0;
+    } else {
+        // 其他声纳使用默认20倍系数
+        multiplier = 20.0;
+    }
+
     if (frequency > 0.0) {
-        double di = 20.0 * log10(frequency) + params.offset;
-        LOG_INFOF("Calculated DI for sonar %d: f=%.1fkHz, DI=%.2f", sonarID, frequency, di);
+        double di = multiplier * log10(frequency) + params.offset;
+        LOG_INFOF("Calculated DI for sonar %d: f=%.1fkHz, multiplier=%.0f, offset=%.2f, DI=%.2f",
+                  sonarID, frequency, multiplier, params.offset, di);
         return di;
     } else {
         return params.offset;  // 频率为0时只返回偏移量
@@ -687,6 +700,7 @@ bool DeviceModel::isEquationDataValid(int sonarID)
 
     return dataValid && dataExists;
 }
+
 void DeviceModel::performSonarEquationCalculation()
 {
     LOG_DEBUG("Performing sonar equation calculation for all sonars");
