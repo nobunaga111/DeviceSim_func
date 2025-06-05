@@ -4,6 +4,7 @@
 #include "CSimModelAgentBase.h"
 #include <map>
 #include <string>
+#include <memory>
 #include "../../DeviceModel/src/common/DMLogger.h"
 
 class DeviceModelAgent : public CSimModelAgentBase
@@ -136,12 +137,76 @@ public:
     */
     void addSubscribedData(const char* topic, int64 platformId, CSimData* data);
 
+    /**
+    * 添加订阅数据 - 重载方法，支持组件ID
+    * @param topic 主题
+    * @param platformId 平台ID
+    * @param componentId 组件ID
+    * @param data 数据指针
+    */
+    void addSubscribedData(const char* topic, int64 platformId, int64 componentId, CSimData* data);
+
+    /**
+    * 清除过期的订阅数据
+    * @param maxAge 最大年龄（毫秒）
+    */
+    void clearExpiredData(int64 maxAge = 10000);
+
+    /**
+    * 获取订阅数据的统计信息
+    * @return 数据统计字符串
+    */
+    std::string getDataStatistics() const;
+
+    /**
+    * 检查数据是否有效
+    * @param topic 主题
+    * @param platformId 平台ID
+    * @param maxAge 最大年龄（毫秒）
+    * @return true if data is valid and not too old
+    */
+    bool isDataValid(const char* topic, int64 platformId, int64 maxAge = 5000) const;
+
+private:
+    /**
+    * 生成数据存储的键值
+    * @param topic 主题
+    * @param platformId 平台ID
+    * @param componentId 组件ID（可选）
+    * @return 键值字符串
+    */
+    std::string generateDataKey(const char* topic, int64 platformId, int64 componentId = -1) const;
+
+    /**
+    * 安全删除数据指针
+    * @param data 要删除的数据指针
+    */
+    void safeDeleteData(CSimData* data);
+
+    /**
+    * 打印调试信息
+    * @param message 调试消息
+    */
+    void debugLog(const std::string& message) const;
+
 private:
     CSimPlatformEntity m_platform;
     CSimComponentAttribute m_attribute;
 
-    // 存储订阅的各种数据
-    std::map<std::string, CSimData*> m_subscribedData;
+    // 存储订阅的各种数据 - 使用智能指针管理内存
+    std::map<std::string, std::unique_ptr<CSimData>> m_subscribedDataMap;
+
+    // 数据访问统计
+    mutable std::map<std::string, int> m_dataAccessCount;
+    mutable std::map<std::string, int64> m_lastAccessTime;
+
+    // 调试开关
+    bool m_enableDebugOutput;
+
+    // 数据清理相关
+    int64 m_lastCleanupTime;
+    static const int64 CLEANUP_INTERVAL_MS = 30000; // 30秒清理一次
+    static const int64 DEFAULT_DATA_MAX_AGE_MS = 10000; // 默认数据有效期10秒
 };
 
 #endif // DEVICEMODELAGENT_H

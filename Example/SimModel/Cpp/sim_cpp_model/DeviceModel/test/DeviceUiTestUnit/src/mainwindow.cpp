@@ -2,21 +2,53 @@
 #include <random>
 #include <chrono>
 #include <cstring>
+#include <QSplitter>
+#include <QHeaderView>
+#include <QTableWidget>
+
+// 静态常量定义
+const QStringList MainWindow::SONAR_NAMES = {
+    "艏端声纳", "舷侧声纳", "粗拖声纳", "细拖声纳"
+};
+
+const QList<QColor> MainWindow::SONAR_COLORS = {
+    QColor(0, 255, 0),      // 艏端声纳 - 绿色
+    QColor(0, 0, 255),      // 舷侧声纳 - 蓝色
+    QColor(255, 255, 0),    // 粗拖声纳 - 黄色
+    QColor(255, 0, 255)     // 细拖声纳 - 洋红色
+};
 
 // 构造函数
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent),
-    m_component(nullptr),
-    m_agent(nullptr)
+MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent)
+    , m_centralWidget(nullptr)
+    , m_mainSplitter(nullptr)
+    , m_rightSplitter(nullptr)
+    , m_seaChartWidget(nullptr)
+    , m_seaChartPanel(nullptr)
+    , m_controlPanel(nullptr)
+    , m_component(nullptr)
+    , m_agent(nullptr)
+    , m_statusUpdateTimer(nullptr)
+    , m_dataGenerationTimer(nullptr)
+    , m_platformSelfSoundSent(false)
+    , m_environmentNoiseSent(false)
 {
-    // 设置窗口标题和大小
-    setWindowTitle("声纳系统测试平台");
-    resize(1000, 600);
+    // 设置窗口属性
+    setWindowTitle("多目标声纳系统导调平台");
+    resize(1400, 900);
+    setMinimumSize(1200, 800);
 
     // 居中显示窗口
     QRect screenGeometry = QApplication::primaryScreen()->geometry();
     int x = (screenGeometry.width() - width()) / 2;
     int y = (screenGeometry.height() - height()) / 2;
     move(x, y);
+
+    // 初始化声纳状态
+    for (int i = 0; i < 4; i++) {
+        m_sonarEnabledStates[i] = true;  // 默认全部启用
+    }
 
     // 初始化界面
     initializeUI();
@@ -29,28 +61,35 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent),
     if (m_component && m_agent) {
         m_component->init(m_agent, nullptr);
         m_component->start();
-        addLog("声纳模型初始化完成");
+        addLog("多目标声纳模型初始化完成");
     } else {
         addLog("错误：声纳模型初始化失败");
     }
 
-    // 初始化声纳状态映射 - 默认全部开启（4个声纳：0,1,2,3）
-    for (int id = 0; id < 4; id++) {
-        m_arrayWorkingStates[id] = true;        // 默认开启
-        m_passiveWorkingStates[id] = true;      // 默认开启
-        m_activeWorkingStates[id] = true;       // 默认开启
-        m_scoutingWorkingStates[id] = true;     // 默认开启
-    }
+    // 初始化定时器
+    initializeTimers();
 
-    // 初始化所有声纳状态
-    initializeSonarStates();
+    // 发送基础数据（环境噪声和平台自噪声）
+    generateAndSendEnvironmentNoiseData();
+    generateAndSendPlatformSelfSoundData();
+
+    addLog("多目标声纳系统导调平台启动完成");
 }
 
 // 析构函数
 MainWindow::~MainWindow()
 {
+    // 停止定时器
+    if (m_statusUpdateTimer) {
+        m_statusUpdateTimer->stop();
+    }
+    if (m_dataGenerationTimer) {
+        m_dataGenerationTimer->stop();
+    }
+
     // 释放资源
     if (m_component) {
+        m_component->stop();
         delete m_component;
         m_component = nullptr;
     }
@@ -61,261 +100,412 @@ MainWindow::~MainWindow()
     }
 }
 
-// 初始化UI界面
 void MainWindow::initializeUI()
 {
-    // 创建中央部件
-    QWidget* centralWidget = new QWidget(this);
-    setCentralWidget(centralWidget);
-
     // 创建主布局
-    QVBoxLayout* mainLayout = new QVBoxLayout(centralWidget);
+    createMainLayout();
 
-    // 创建标签页控件
-    m_tabWidget = new QTabWidget(this);
+    // 创建海图面板
+    createSeaChartPanel();
 
-    // 创建各个标签页
-    m_sonarControlTab = new QWidget(m_tabWidget);
-    m_messageSendTab = new QWidget(m_tabWidget);
+    // 创建控制面板
+    createControlPanel();
 
-    // 创建各个面板
-    createSonarControlPanel();
-    createMessageSendPanel();
+    // 创建声纳状态面板
+    createSonarStatusPanel();
+
+    // 创建日志面板
     createLogPanel();
 
-    // 添加标签页
-    m_tabWidget->addTab(m_sonarControlTab, "声纳控制");
-    m_tabWidget->addTab(m_messageSendTab, "声纳方程计算");  // 修改标签页名称
-
-    // 创建底部日志容器
-    QWidget* logContainer = new QWidget(this);
-    QVBoxLayout* logLayout = new QVBoxLayout(logContainer);
-    logLayout->setContentsMargins(0, 0, 0, 0);
-
-    // *** 增加日志显示区域的最小高度 ***
-    m_logTextEdit->setMinimumHeight(300);  // 增加日志区域高度
-
-    // 添加日志控件和按钮到底部容器
-    logLayout->addWidget(m_logTextEdit);
-
-    QHBoxLayout* buttonLayout = new QHBoxLayout();
-    buttonLayout->addStretch(1);
-    buttonLayout->addWidget(m_clearLogButton);
-    logLayout->addLayout(buttonLayout);
-
-    // *** 调整标签页和日志容器的比例 ***
-    mainLayout->addWidget(m_tabWidget, 2);      // 标签页占2/3
-    mainLayout->addWidget(logContainer, 1);     // 日志区占1/3
+    // 设置分割器比例
+    m_mainSplitter->setSizes({800, 600});  // 海图:控制面板 = 4:3
+    m_rightSplitter->setSizes({400, 200}); // 控制:日志 = 2:1
 }
 
-// 创建声纳控制面板
-void MainWindow::createSonarControlPanel()
+void MainWindow::createMainLayout()
 {
-    // 创建声纳控制面板布局
-    QGridLayout* layout = new QGridLayout(m_sonarControlTab);
+    // 创建中央部件
+    m_centralWidget = new QWidget(this);
+    setCentralWidget(m_centralWidget);
 
-    // 声纳类型和位置定义
-    struct SonarInfo {
-        int id;
-        QString name;
-        QString description;
-    };
+    // 创建主分割器 (水平分割：海图 | 控制面板)
+    m_mainSplitter = new QSplitter(Qt::Horizontal, m_centralWidget);
 
-    // 声纳类型列表（精简为4个，ID为0,1,2,3）
-    QList<SonarInfo> sonars = {
-        {0, "艏端声纳", "前向声纳，用于探测前方目标"},
-        {1, "舷侧声纳", "侧向声纳，扩展探测角度"},
-        {2, "粗拖声纳", "拖曳式粗孔径声纳阵列"},
-        {3, "细拖声纳", "拖曳式细孔径声纳阵列"}
-    };
+    // 创建右侧分割器 (垂直分割：控制面板 / 日志)
+    m_rightSplitter = new QSplitter(Qt::Vertical, m_mainSplitter);
 
-    // 创建各声纳控制组（2x2布局）
-    int row = 0;
-    int col = 0;
-    for (const SonarInfo& sonar : sonars) {
-        // 创建声纳分组框
-        QGroupBox* groupBox = new QGroupBox(sonar.name);
-        QVBoxLayout* groupLayout = new QVBoxLayout(groupBox);
+    // 设置主布局
+    QHBoxLayout* mainLayout = new QHBoxLayout(m_centralWidget);
+    mainLayout->setContentsMargins(5, 5, 5, 5);
+    mainLayout->addWidget(m_mainSplitter);
+}
 
-        // 创建声纳状态标签
-        QLabel* descLabel = new QLabel(sonar.description);
-        descLabel->setWordWrap(true);
-        groupLayout->addWidget(descLabel);
+void MainWindow::createSeaChartPanel()
+{
+    // 创建海图面板容器
+    m_seaChartPanel = new QWidget();
+    m_seaChartPanel->setMinimumWidth(600);
 
-        // 创建控制按钮
-        QGridLayout* buttonGrid = new QGridLayout();
+    // 创建海图组件
+    m_seaChartWidget = new SeaChartWidget(m_seaChartPanel);
+    m_seaChartWidget->setMainWindow(this);
 
-        // 阵列开关按钮 - 默认开启状态
-        QPushButton* arraySwitch = new QPushButton("阵列: 开启");
-        arraySwitch->setCheckable(true);
-        arraySwitch->setChecked(true);  // 默认选中
-        connect(arraySwitch, &QPushButton::clicked, [this, sonar](bool checked) {
-            onArraySwitchClicked(sonar.id, checked);
-        });
-        buttonGrid->addWidget(arraySwitch, 0, 0);
+    // 连接海图信号
+    connect(m_seaChartWidget, &SeaChartWidget::targetPlatformsUpdated,
+            this, &MainWindow::onTargetPlatformsUpdated);
+    connect(m_seaChartWidget, &SeaChartWidget::platformPositionChanged,
+            this, &MainWindow::onPlatformPositionChanged);
 
-        // 被动声纳开关按钮 - 默认开启状态
-        QPushButton* passiveSwitch = new QPushButton("被动: 开启");
-        passiveSwitch->setCheckable(true);
-        passiveSwitch->setChecked(true);  // 默认选中
-        passiveSwitch->setEnabled(true);   // 默认启用
-        connect(passiveSwitch, &QPushButton::clicked, [this, sonar](bool checked) {
-            onPassiveSwitchClicked(sonar.id, checked);
-        });
-        buttonGrid->addWidget(passiveSwitch, 0, 1);
+    // 设置海图面板布局
+    QVBoxLayout* seaChartLayout = new QVBoxLayout(m_seaChartPanel);
+    seaChartLayout->setContentsMargins(0, 0, 0, 0);
+    seaChartLayout->addWidget(m_seaChartWidget);
 
-        // 主动声纳开关按钮 - 默认开启状态
-        QPushButton* activeSwitch = new QPushButton("主动: 开启");
-        activeSwitch->setCheckable(true);
-        activeSwitch->setChecked(true);  // 默认选中
-        activeSwitch->setEnabled(true);   // 默认启用
-        connect(activeSwitch, &QPushButton::clicked, [this, sonar](bool checked) {
-            onActiveSwitchClicked(sonar.id, checked);
-        });
-        buttonGrid->addWidget(activeSwitch, 1, 0);
+    // 添加到主分割器
+    m_mainSplitter->addWidget(m_seaChartPanel);
+}
 
-        // 侦察声纳开关按钮 - 默认开启状态
-        QPushButton* scoutingSwitch = new QPushButton("侦察: 开启");
-        scoutingSwitch->setCheckable(true);
-        scoutingSwitch->setChecked(true);  // 默认选中
-        scoutingSwitch->setEnabled(true);   // 默认启用
-        connect(scoutingSwitch, &QPushButton::clicked, [this, sonar](bool checked) {
-            onScoutingSwitchClicked(sonar.id, checked);
-        });
-        buttonGrid->addWidget(scoutingSwitch, 1, 1);
+void MainWindow::createControlPanel()
+{
+    // 创建控制面板
+    m_controlPanel = new QWidget();
+    m_controlPanel->setMinimumWidth(400);
+    m_controlPanel->setMaximumWidth(500);
 
-        // 声纳初始化按钮
-        QPushButton* initButton = new QPushButton("初始化声纳");
-        connect(initButton, &QPushButton::clicked, [this, sonar]() {
-            onInitSonarClicked(sonar.id);
-        });
-        buttonGrid->addWidget(initButton, 2, 0, 1, 2);
+    // 添加到右侧分割器
+    m_rightSplitter->addWidget(m_controlPanel);
 
-        // 添加按钮网格到分组布局
-        groupLayout->addLayout(buttonGrid);
+    // 控制面板将在createSonarStatusPanel中填充内容
+}
 
-        // 保存控件引用
-        SonarControls controls;
-        controls.arraySwitch = arraySwitch;
-        controls.passiveSwitch = passiveSwitch;
-        controls.activeSwitch = activeSwitch;
-        controls.scoutingSwitch = scoutingSwitch;
-        controls.initButton = initButton;
-        m_sonarControls[sonar.id] = controls;
-        m_sonarGroupBoxes[sonar.id] = groupBox;
+void MainWindow::createSonarStatusPanel()
+{
+    // 创建控制面板的主布局
+    QVBoxLayout* controlLayout = new QVBoxLayout(m_controlPanel);
+    controlLayout->setSpacing(10);
+    controlLayout->setContentsMargins(10, 10, 10, 10);
 
-        // 添加分组框到布局（2x2排列）
-        layout->addWidget(groupBox, row, col);
+    // === 声纳状态控制组 ===
+    m_sonarStatusGroup = new QGroupBox("声纳阵列状态与控制");
+    m_sonarStatusGroup->setStyleSheet(
+        "QGroupBox { font-weight: bold; font-size: 12px; }"
+        "QGroupBox::title { subcontrol-origin: margin; padding: 0 5px; }"
+    );
 
-        // 更新行列位置
-        col++;
-        if (col > 1) {  // 每行2个
-            col = 0;
-            row++;
-        }
+    QVBoxLayout* sonarLayout = new QVBoxLayout(m_sonarStatusGroup);
+
+    // 为每个声纳创建控制组件
+    for (int sonarID = 0; sonarID < 4; sonarID++) {
+        QFrame* sonarFrame = new QFrame();
+        sonarFrame->setFrameStyle(QFrame::Box | QFrame::Raised);
+        sonarFrame->setStyleSheet("QFrame { border: 1px solid gray; border-radius: 5px; padding: 5px; }");
+
+        QGridLayout* frameLayout = new QGridLayout(sonarFrame);
+        frameLayout->setSpacing(5);
+
+        SonarControlWidget control;
+
+        // 声纳名称和启用开关
+        control.nameLabel = new QLabel(SONAR_NAMES[sonarID]);
+//        control.nameLabel->setStyleSheet("font-weight: bold; color: " + SONAR_COLORS[sonarID].name() + ";");
+        control.nameLabel->setStyleSheet("font-weight: bold; font-size: 14px; color: " + SONAR_COLORS[sonarID].name() + ";");
+
+        frameLayout->addWidget(control.nameLabel, 0, 0, 1, 2);
+
+        control.enableCheckBox = new QCheckBox("启用");
+        control.enableCheckBox->setChecked(true);
+        connect(control.enableCheckBox, &QCheckBox::toggled,
+                [this, sonarID](bool checked) { onSonarSwitchToggled(sonarID, checked); });
+        frameLayout->addWidget(control.enableCheckBox, 0, 2);
+
+        // 状态指示
+        control.statusLabel = new QLabel("正常");
+        control.statusLabel->setStyleSheet("color: green; font-weight: bold;");
+        frameLayout->addWidget(new QLabel("状态:"), 1, 0);
+        frameLayout->addWidget(control.statusLabel, 1, 1, 1, 2);
+
+        // 目标数量显示
+        control.targetCountDisplay = new QLCDNumber(2);
+        control.targetCountDisplay->setStyleSheet("QLCDNumber { background-color: black; color: lime; }");
+        control.targetCountDisplay->setSegmentStyle(QLCDNumber::Flat);
+        control.targetCountDisplay->display(0);
+        frameLayout->addWidget(new QLabel("目标数:"), 2, 0);
+        frameLayout->addWidget(control.targetCountDisplay, 2, 1, 1, 2);
+
+        // 信号强度条
+        control.signalStrengthBar = new QProgressBar();
+        control.signalStrengthBar->setRange(0, 100);
+        control.signalStrengthBar->setValue(0);
+        control.signalStrengthBar->setStyleSheet(
+            "QProgressBar { border: 2px solid grey; border-radius: 5px; text-align: center; }"
+            "QProgressBar::chunk { background-color: " + SONAR_COLORS[sonarID].name() + "; width: 10px; }"
+        );
+        frameLayout->addWidget(new QLabel("信号强度:"), 3, 0);
+        frameLayout->addWidget(control.signalStrengthBar, 3, 1, 1, 2);
+
+        // 方程结果标签
+        control.equationResultLabel = new QLabel("等待数据...");
+        control.equationResultLabel->setStyleSheet("color: blue; font-size: 10px;");
+        control.equationResultLabel->setWordWrap(true);
+        frameLayout->addWidget(new QLabel("方程结果:"), 4, 0);
+        frameLayout->addWidget(control.equationResultLabel, 4, 1, 1, 2);
+
+        m_sonarControls[sonarID] = control;
+        sonarLayout->addWidget(sonarFrame);
     }
 
-    // 设置布局
-    m_sonarControlTab->setLayout(layout);
-}
+    controlLayout->addWidget(m_sonarStatusGroup);
 
-void MainWindow::createMessageSendPanel()
-{
-    // 创建消息发送面板布局
-    QVBoxLayout* layout = new QVBoxLayout(m_messageSendTab);
+    // === 系统状态组 ===
+    m_systemStatusGroup = new QGroupBox("系统状态信息");
+    m_systemStatusGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 12px; }");
 
-    // *** 删除原来的声音数据发送组，直接创建声纳方程测试组 ***
-    m_equationGroupBox = new QGroupBox("声纳方程计算测试");
-    QVBoxLayout* equationLayout = new QVBoxLayout(m_equationGroupBox);
+    QGridLayout* systemLayout = new QGridLayout(m_systemStatusGroup);
 
-    // 发送完整测试数据按钮
-    m_sendCompleteTestDataButton = new QPushButton("发送完整测试数据");
-    m_sendCompleteTestDataButton->setMinimumHeight(40);
-    m_sendCompleteTestDataButton->setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;");
-    connect(m_sendCompleteTestDataButton, &QPushButton::clicked, this, &MainWindow::onSendCompleteTestDataClicked);
+    // 平台位置
+    systemLayout->addWidget(new QLabel("平台位置:"), 0, 0);
+    m_platformPositionLabel = new QLabel("126.56°E, 56.65°N");
+//    m_platformPositionLabel->setStyleSheet("color: blue; font-family: monospace;");
+    m_platformPositionLabel->setStyleSheet("color: blue; font-family: monospace; font-size: 12px;");
+    systemLayout->addWidget(m_platformPositionLabel, 0, 1);
 
-    // 显示计算结果按钮
-    m_showEquationResultsButton = new QPushButton("显示声纳方程计算结果");
-    m_showEquationResultsButton->setMinimumHeight(40);
-    m_showEquationResultsButton->setStyleSheet("background-color: #2196F3; color: white; font-weight: bold;");
-    connect(m_showEquationResultsButton, &QPushButton::clicked, this, &MainWindow::onShowEquationResultsClicked);
+    // 目标数量
+    systemLayout->addWidget(new QLabel("目标数量:"), 1, 0);
+    m_targetCountLabel = new QLabel("0");
+//    m_targetCountLabel->setStyleSheet("color: red; font-weight: bold;");
+    m_targetCountLabel->setStyleSheet("color: red; font-weight: bold; font-size: 14px;");
+    systemLayout->addWidget(m_targetCountLabel, 1, 1);
 
-    // 设置DI参数按钮
-    m_setDIParametersButton = new QPushButton("设置DI参数");
-    m_setDIParametersButton->setMinimumHeight(40);
-    m_setDIParametersButton->setStyleSheet("background-color: #FF9800; color: white; font-weight: bold;");
-    connect(m_setDIParametersButton, &QPushButton::clicked, this, &MainWindow::onSetDIParametersClicked);
+    // 数据状态
+    systemLayout->addWidget(new QLabel("数据状态:"), 2, 0);
+    m_dataStatusLabel = new QLabel("初始化中...");
+//    m_dataStatusLabel->setStyleSheet("color: orange;");
+    m_dataStatusLabel->setStyleSheet("color: orange; font-size: 12px;");
+    systemLayout->addWidget(m_dataStatusLabel, 2, 1);
 
-    // 创建按钮布局
-    QHBoxLayout* buttonLayout = new QHBoxLayout();
-    buttonLayout->addWidget(m_sendCompleteTestDataButton);
-    buttonLayout->addWidget(m_showEquationResultsButton);
+    // 仿真时间
+    systemLayout->addWidget(new QLabel("仿真时间:"), 3, 0);
+    m_simulationTimeLabel = new QLabel("00:00:00");
+//    m_simulationTimeLabel->setStyleSheet("color: green; font-family: monospace;");
+    m_simulationTimeLabel->setStyleSheet("color: green; font-family: monospace; font-size: 14px;");
+    systemLayout->addWidget(m_simulationTimeLabel, 3, 1);
 
-    // *** 计算结果显示区域 - 大幅增加高度 ***
-    m_equationResultsTextEdit = new QTextEdit();
-    m_equationResultsTextEdit->setReadOnly(true);
-    m_equationResultsTextEdit->setMinimumHeight(400);  // 从200增加到400
-    m_equationResultsTextEdit->setPlainText("点击\"发送完整测试数据\"开始测试声纳方程计算功能...");
+    controlLayout->addWidget(m_systemStatusGroup);
 
-    // 添加说明标签
-    QLabel* equationDescLabel = new QLabel(
-        "声纳方程计算测试流程：\n"
-        "1. 点击\"发送完整测试数据\"发送所需的三种数据\n"
-        "2. 等待2-3秒让系统处理数据\n"
-        "3. 点击\"显示计算结果\"查看计算结果\n"
-        "4. 可选：点击\"设置DI参数\"调整计算参数"
+    // === 声纳方程结果组 ===
+    m_equationResultsGroup = new QGroupBox("声纳方程计算结果");
+    m_equationResultsGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 12px; }");
+
+    QVBoxLayout* resultsLayout = new QVBoxLayout(m_equationResultsGroup);
+
+    // 控制按钮
+    QHBoxLayout* resultsButtonLayout = new QHBoxLayout();
+    m_refreshResultsButton = new QPushButton("刷新结果");
+    m_refreshResultsButton->setStyleSheet("background-color: lightblue;");
+    connect(m_refreshResultsButton, &QPushButton::clicked, this, &MainWindow::updateSonarEquationResults);
+
+    m_exportResultsButton = new QPushButton("导出结果");
+    m_exportResultsButton->setStyleSheet("background-color: lightgreen;");
+    // TODO: 连接导出功能
+
+    resultsButtonLayout->addWidget(m_refreshResultsButton);
+    resultsButtonLayout->addWidget(m_exportResultsButton);
+    resultsLayout->addLayout(resultsButtonLayout);
+
+    // 结果显示区域
+    m_equationResultsDisplay = new QTextEdit();
+    m_equationResultsDisplay->setMaximumHeight(200);
+    m_equationResultsDisplay->setReadOnly(true);
+    m_equationResultsDisplay->setStyleSheet(
+        "QTextEdit { font-family: monospace; font-size: 10px; background-color: #f0f0f0; }"
     );
-    equationDescLabel->setWordWrap(true);
-    equationDescLabel->setStyleSheet("color: #666; font-size: 11px; padding: 5px; background-color: #f0f0f0; border-radius: 3px;");
+    m_equationResultsDisplay->setPlainText("等待目标数据和声纳方程计算...\n点击\"刷新结果\"查看最新计算结果。");
 
-    // 添加控件到声纳方程布局
-    equationLayout->addWidget(equationDescLabel);
-    equationLayout->addLayout(buttonLayout);
-    equationLayout->addWidget(m_setDIParametersButton);
-    equationLayout->addWidget(new QLabel("计算结果："));
-    equationLayout->addWidget(m_equationResultsTextEdit);  // 这是主要的显示区域
+    resultsLayout->addWidget(m_equationResultsDisplay);
 
-    // 只添加声纳方程测试组到主布局
-    layout->addWidget(m_equationGroupBox);
-    // 删除 addStretch，让计算结果区域占满剩余空间
+    controlLayout->addWidget(m_equationResultsGroup);
 
-    // 设置消息发送标签页布局
-    m_messageSendTab->setLayout(layout);
+    // 添加弹性空间
+    controlLayout->addStretch(1);
 }
 
-// 创建日志面板
 void MainWindow::createLogPanel()
 {
+    // 创建日志面板容器
+    QWidget* logPanel = new QWidget();
+
+    // 创建日志面板布局
+    QVBoxLayout* logLayout = new QVBoxLayout(logPanel);
+    logLayout->setContentsMargins(10, 10, 10, 10);
+
+    // 日志标题
+    QLabel* logTitle = new QLabel("系统日志");
+//    logTitle->setStyleSheet("font-weight: bold; font-size: 14px; color: darkblue;");
+    logTitle->setStyleSheet("font-weight: bold; font-size: 16px; color: darkblue;");
+    logLayout->addWidget(logTitle);
+
     // 创建日志文本编辑框
-    m_logTextEdit = new QTextEdit(this);
+    m_logTextEdit = new QTextEdit();
     m_logTextEdit->setReadOnly(true);
+    m_logTextEdit->setMinimumHeight(150);
+    m_logTextEdit->setStyleSheet(
+        "QTextEdit { font-family: Consolas, monospace; font-size: 12px; "
+        "background-color: #1e1e1e; color: #ffffff; }"
+    );
 
-    // 创建清除日志按钮
-    m_clearLogButton = new QPushButton("清除日志", this);
+    logLayout->addWidget(m_logTextEdit);
+
+    // 创建日志控制按钮
+    QHBoxLayout* logButtonLayout = new QHBoxLayout();
+
+    m_clearLogButton = new QPushButton("清除日志");
+    m_clearLogButton->setStyleSheet("background-color: #ff6b6b; color: white;");
     connect(m_clearLogButton, &QPushButton::clicked, this, &MainWindow::onClearLogClicked);
+
+    QPushButton* saveLogButton = new QPushButton("保存日志");
+    saveLogButton->setStyleSheet("background-color: #4ecdc4; color: white;");
+    // TODO: 连接保存日志功能
+
+    logButtonLayout->addStretch(1);
+    logButtonLayout->addWidget(saveLogButton);
+    logButtonLayout->addWidget(m_clearLogButton);
+
+    logLayout->addLayout(logButtonLayout);
+
+    // 添加到右侧分割器
+    m_rightSplitter->addWidget(logPanel);
 }
 
-// 初始化所有声纳状态
-void MainWindow::initializeSonarStates()
+void MainWindow::initializeTimers()
 {
-    // 等待界面完全创建后再发送控制命令
-    QTimer::singleShot(100, this, [this]() {
-        for (int id = 0; id < 4; id++) {  // 只有4个声纳：0,1,2,3
-            // 发送声纳控制命令
-            sendSonarControlOrder(id,
-                                  m_arrayWorkingStates[id],
-                                  m_passiveWorkingStates[id],
-                                  m_activeWorkingStates[id],
-                                  m_scoutingWorkingStates[id]);
+    // 状态更新定时器 (每秒更新)
+    m_statusUpdateTimer = new QTimer(this);
+    connect(m_statusUpdateTimer, &QTimer::timeout, this, &MainWindow::onUpdateSonarStatus);
+    m_statusUpdateTimer->start(1000); // 1秒间隔
 
-            // 初始化声纳配置
-            onInitSonarClicked(id);
-        }
-        addLog("所有声纳已初始化为开启状态");
-    });
+    // 数据生成定时器 (每5秒生成数据)
+    m_dataGenerationTimer = new QTimer(this);
+    connect(m_dataGenerationTimer, &QTimer::timeout, this, &MainWindow::onDataGenerationTimer);
+    m_dataGenerationTimer->start(5000); // 5秒间隔
+
+    addLog("定时器初始化完成 - 状态更新: 1秒, 数据生成: 5秒");
 }
 
-// 添加日志信息
+// mainwindow.cpp - 槽函数和数据生成逻辑实现
+
+// ========== 槽函数实现 ==========
+
+void MainWindow::onSonarSwitchToggled(int sonarID, bool enabled)
+{
+    if (sonarID < 0 || sonarID >= 4) return;
+
+    m_sonarEnabledStates[sonarID] = enabled;
+
+    // 发送声纳控制命令
+    sendSonarControlOrder(sonarID, enabled);
+
+    // 更新状态显示
+    auto& control = m_sonarControls[sonarID];
+    control.statusLabel->setText(enabled ? "正常" : "关闭");
+    control.statusLabel->setStyleSheet(enabled ? "color: green; font-weight: bold;" : "color: red; font-weight: bold;");
+
+    if (!enabled) {
+        control.targetCountDisplay->display(0);
+        control.signalStrengthBar->setValue(0);
+        control.equationResultLabel->setText("声纳已关闭");
+    }
+
+    addLog(QString("声纳 %1 (%2) 已%3")
+           .arg(sonarID)
+           .arg(SONAR_NAMES[sonarID])
+           .arg(enabled ? "启用" : "禁用"));
+}
+
+void MainWindow::onTargetPlatformsUpdated(const QVector<ChartPlatform>& targetPlatforms)
+{
+    m_currentTargets = targetPlatforms;
+
+    // 更新目标数量显示
+    m_targetCountLabel->setText(QString::number(targetPlatforms.size()));
+    m_targetCountLabel->setStyleSheet(
+        targetPlatforms.isEmpty() ? "color: gray;" :
+        targetPlatforms.size() > 8 ? "color: red; font-weight: bold;" : "color: green; font-weight: bold;"
+    );
+
+    // 生成并发送传播声数据
+    if (!targetPlatforms.isEmpty()) {
+        generateAndSendPropagatedSoundData(targetPlatforms);
+        addLog(QString("已更新 %1 个目标平台的传播声数据").arg(targetPlatforms.size()));
+    }
+
+    // 更新数据状态
+    if (m_platformSelfSoundSent && m_environmentNoiseSent && !targetPlatforms.isEmpty()) {
+        m_dataStatusLabel->setText("数据完整");
+        m_dataStatusLabel->setStyleSheet("color: green; font-weight: bold;");
+    } else {
+        m_dataStatusLabel->setText("数据不完整");
+        m_dataStatusLabel->setStyleSheet("color: orange;");
+    }
+}
+
+void MainWindow::onPlatformPositionChanged(int platformId, const QPointF& newPosition)
+{
+    Q_UNUSED(platformId);
+
+    // 更新平台位置显示
+    m_platformPositionLabel->setText(QString("%1°E, %2°N")
+                                     .arg(newPosition.x(), 0, 'f', 4)
+                                     .arg(newPosition.y(), 0, 'f', 4));
+
+    // 修复这行的格式化：
+    addLog(QString("平台位置更新: %1°E, %2°N")
+           .arg(newPosition.x(), 0, 'f', 4)
+           .arg(newPosition.y(), 0, 'f', 4));
+}
+
+void MainWindow::onClearLogClicked()
+{
+    if (m_logTextEdit) {
+        m_logTextEdit->clear();
+        addLog("日志已清除");
+    }
+}
+
+void MainWindow::onUpdateSonarStatus()
+{
+    // 更新仿真时间
+    static int simulationSeconds = 0;
+    simulationSeconds++;
+    int hours = simulationSeconds / 3600;
+    int minutes = (simulationSeconds % 3600) / 60;
+    int seconds = simulationSeconds % 60;
+
+    m_simulationTimeLabel->setText(QString("%1:%2:%3")
+                                   .arg(hours, 2, 10, QChar('0'))
+                                   .arg(minutes, 2, 10, QChar('0'))
+                                   .arg(seconds, 2, 10, QChar('0')));
+
+    // 更新声纳状态显示
+    updateSonarStatusDisplay();
+}
+
+void MainWindow::onDataGenerationTimer()
+{
+    // 每5秒触发一次，生成新的传播声数据
+    if (!m_currentTargets.isEmpty() && m_component) {
+        generateAndSendPropagatedSoundData(m_currentTargets);
+
+        // 触发声纳模型的step方法
+        int64 currentTime = QDateTime::currentMSecsSinceEpoch();
+        m_component->step(currentTime, 5000); // 5秒步长
+
+        // 延迟更新结果显示，给声纳模型时间处理数据
+        QTimer::singleShot(500, this, &MainWindow::updateSonarEquationResults);
+    }
+}
+
+// ========== 辅助函数实现 ==========
+
 void MainWindow::addLog(const QString& message)
 {
     if (!m_logTextEdit) return;
@@ -333,150 +523,79 @@ void MainWindow::addLog(const QString& message)
     }
 }
 
-// 声纳阵列开关按钮点击事件
-void MainWindow::onArraySwitchClicked(int sonarID, bool isOn)
+void MainWindow::updateSonarStatusDisplay()
 {
     if (!m_component) return;
 
-    // 更新声纳状态
-    m_arrayWorkingStates[sonarID] = isOn;
+    // 将组件转换为DeviceModel以访问多目标结果
+    DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
+    if (!deviceModel) return;
 
-    // 更新按钮文本
-    m_sonarControls[sonarID].arraySwitch->setText(isOn ? "阵列: 开启" : "阵列: 关闭");
+    // 获取所有声纳的目标结果
+    auto allResults = deviceModel->getAllSonarTargetsResults();
 
-    // 启用或禁用功能按钮
-    m_sonarControls[sonarID].passiveSwitch->setEnabled(isOn);
-    m_sonarControls[sonarID].activeSwitch->setEnabled(isOn);
-    m_sonarControls[sonarID].scoutingSwitch->setEnabled(isOn);
+    for (int sonarID = 0; sonarID < 4; sonarID++) {
+        auto& control = m_sonarControls[sonarID];
 
-    // 如果关闭阵列，同时关闭所有功能
-    if (!isOn) {
-        m_passiveWorkingStates[sonarID] = false;
-        m_activeWorkingStates[sonarID] = false;
-        m_scoutingWorkingStates[sonarID] = false;
+        if (!m_sonarEnabledStates[sonarID]) {
+            // 声纳未启用
+            control.targetCountDisplay->display(0);
+            control.signalStrengthBar->setValue(0);
+            control.equationResultLabel->setText("声纳已关闭");
+            continue;
+        }
 
-        m_sonarControls[sonarID].passiveSwitch->setChecked(false);
-        m_sonarControls[sonarID].activeSwitch->setChecked(false);
-        m_sonarControls[sonarID].scoutingSwitch->setChecked(false);
+        // 获取该声纳的目标结果
+        auto it = allResults.find(sonarID);
+        if (it != allResults.end()) {
+            const auto& targets = it->second;
 
-        m_sonarControls[sonarID].passiveSwitch->setText("被动: 关闭");
-        m_sonarControls[sonarID].activeSwitch->setText("主动: 关闭");
-        m_sonarControls[sonarID].scoutingSwitch->setText("侦察: 关闭");
-    }
+            // 统计有效目标数量
+            int validTargetCount = 0;
+            double maxEquationResult = 0.0;
+            QString resultText = "";
 
-    // 发送声纳控制命令
-    sendSonarControlOrder(sonarID,
-                          m_arrayWorkingStates[sonarID],
-                          m_passiveWorkingStates[sonarID],
-                          m_activeWorkingStates[sonarID],
-                          m_scoutingWorkingStates[sonarID]);
+            for (const auto& target : targets) {
+                if (target.isValid) {
+                    validTargetCount++;
+                    maxEquationResult = std::max(maxEquationResult, target.equationResult);
 
-    // 添加日志
-    addLog(QString("声纳 %1 阵列已%2").arg(sonarID).arg(isOn ? "开启" : "关闭"));
-}
+                    if (resultText.length() < 100) { // 限制显示长度
+                        resultText += QString("T%1:%2 ")
+                                     .arg(target.targetId)
+                                     .arg(target.equationResult, 0, 'f', 1);
+                    }
+                }
+            }
 
-// 被动声纳开关按钮点击事件
-void MainWindow::onPassiveSwitchClicked(int sonarID, bool isOn)
-{
-    if (!m_component) return;
+            // 更新目标数量显示
+            control.targetCountDisplay->display(validTargetCount);
 
-    // 更新声纳状态
-    m_passiveWorkingStates[sonarID] = isOn;
+            // 更新信号强度条 (基于最大方程结果)
+            int strengthValue = static_cast<int>(std::min(100.0, std::max(0.0, maxEquationResult * 2))); // 假设50为满强度
+            control.signalStrengthBar->setValue(strengthValue);
 
-    // 更新按钮文本
-    m_sonarControls[sonarID].passiveSwitch->setText(isOn ? "被动: 开启" : "被动: 关闭");
+            // 更新方程结果显示
+            if (validTargetCount > 0) {
+                if (resultText.isEmpty()) {
+                    control.equationResultLabel->setText(QString("%1个目标").arg(validTargetCount));
+                } else {
+                    control.equationResultLabel->setText(resultText.trimmed());
+                }
+            } else {
+                control.equationResultLabel->setText("无有效目标");
+            }
 
-    // 发送声纳控制命令
-    sendSonarControlOrder(sonarID,
-                          m_arrayWorkingStates[sonarID],
-                          m_passiveWorkingStates[sonarID],
-                          m_activeWorkingStates[sonarID],
-                          m_scoutingWorkingStates[sonarID]);
-
-    // 添加日志
-    addLog(QString("声纳 %1 被动功能已%2").arg(sonarID).arg(isOn ? "开启" : "关闭"));
-}
-
-// 主动声纳开关按钮点击事件
-void MainWindow::onActiveSwitchClicked(int sonarID, bool isOn)
-{
-    if (!m_component) return;
-
-    // 更新声纳状态
-    m_activeWorkingStates[sonarID] = isOn;
-
-    // 更新按钮文本
-    m_sonarControls[sonarID].activeSwitch->setText(isOn ? "主动: 开启" : "主动: 关闭");
-
-    // 发送声纳控制命令
-    sendSonarControlOrder(sonarID,
-                          m_arrayWorkingStates[sonarID],
-                          m_passiveWorkingStates[sonarID],
-                          m_activeWorkingStates[sonarID],
-                          m_scoutingWorkingStates[sonarID]);
-
-    // 添加日志
-    addLog(QString("声纳 %1 主动功能已%2").arg(sonarID).arg(isOn ? "开启" : "关闭"));
-}
-
-// 侦察声纳开关按钮点击事件
-void MainWindow::onScoutingSwitchClicked(int sonarID, bool isOn)
-{
-    if (!m_component) return;
-
-    // 更新声纳状态
-    m_scoutingWorkingStates[sonarID] = isOn;
-
-    // 更新按钮文本
-    m_sonarControls[sonarID].scoutingSwitch->setText(isOn ? "侦察: 开启" : "侦察: 关闭");
-
-    // 发送声纳控制命令
-    sendSonarControlOrder(sonarID,
-                          m_arrayWorkingStates[sonarID],
-                          m_passiveWorkingStates[sonarID],
-                          m_activeWorkingStates[sonarID],
-                          m_scoutingWorkingStates[sonarID]);
-
-    // 添加日志
-    addLog(QString("声纳 %1 侦察功能已%2").arg(sonarID).arg(isOn ? "开启" : "关闭"));
-}
-
-// 初始化声纳按钮点击事件
-void MainWindow::onInitSonarClicked(int sonarID)
-{
-    if (!m_component) return;
-
-    // 创建被动声纳初始化配置
-    CAttr_PassiveSonarComponent config = createPassiveSonarConfig(sonarID);
-
-    // 创建初始化消息
-    CSimMessage msg;
-    msg.dataFormat = STRUCT;
-    msg.data = &config;
-    msg.length = sizeof(config);
-    memcpy(msg.topic, ATTR_PassiveSonarComponent, sizeof(ATTR_PassiveSonarComponent));
-
-    // 发送初始化消息
-    m_component->onMessage(&msg);
-
-    // 添加日志
-    addLog(QString("声纳 %1 已初始化").arg(sonarID));
-}
-
-
-
-// 清除日志按钮点击事件
-void MainWindow::onClearLogClicked()
-{
-    if (m_logTextEdit) {
-        m_logTextEdit->clear();
-        addLog("日志已清除");
+        } else {
+            // 没有结果数据
+            control.targetCountDisplay->display(0);
+            control.signalStrengthBar->setValue(0);
+            control.equationResultLabel->setText("等待数据...");
+        }
     }
 }
 
-// 发送声纳控制命令
-void MainWindow::sendSonarControlOrder(int sonarID, bool arrayWorkingOrder, bool passiveWorkingOrder,
-                                      bool activeWorkingOrder, bool scoutingWorkingOrder)
+void MainWindow::sendSonarControlOrder(int sonarID, bool enabled)
 {
     if (!m_component) return;
 
@@ -484,10 +603,10 @@ void MainWindow::sendSonarControlOrder(int sonarID, bool arrayWorkingOrder, bool
         // 创建声纳控制命令
         CMsg_SonarCommandControlOrder order;
         order.sonarID = sonarID;
-        order.arrayWorkingOrder = arrayWorkingOrder ? 1 : 0;
-        order.passiveWorkingOrder = passiveWorkingOrder ? 1 : 0;
-        order.activeWorkingOrder = activeWorkingOrder ? 1 : 0;
-        order.scoutingWorkingOrder = scoutingWorkingOrder ? 1 : 0;
+        order.arrayWorkingOrder = enabled ? 1 : 0;
+        order.passiveWorkingOrder = enabled ? 1 : 0;
+        order.activeWorkingOrder = enabled ? 1 : 0;
+        order.scoutingWorkingOrder = enabled ? 1 : 0;
         order.multiSendWorkingOrder = 0;       // 默认关闭
         order.multiReceiveWorkingOrder = 0;    // 默认关闭
         order.activeTransmitWorkingOrder = 0;  // 默认关闭
@@ -495,6 +614,10 @@ void MainWindow::sendSonarControlOrder(int sonarID, bool arrayWorkingOrder, bool
         // 创建控制消息
         CSimMessage controlMsg;
         controlMsg.dataFormat = STRUCT;
+        controlMsg.time = QDateTime::currentMSecsSinceEpoch();
+        controlMsg.sender = 1;
+        controlMsg.senderComponentId = 1;
+        controlMsg.receiver = 1;
         controlMsg.data = &order;
         controlMsg.length = sizeof(order);
         memcpy(controlMsg.topic, MSG_SonarCommandControlOrder, strlen(MSG_SonarCommandControlOrder) + 1);
@@ -509,240 +632,116 @@ void MainWindow::sendSonarControlOrder(int sonarID, bool arrayWorkingOrder, bool
     }
 }
 
-// 创建被动声纳初始化数据
-CAttr_PassiveSonarComponent MainWindow::createPassiveSonarConfig(int sonarID)
-{
-    CAttr_PassiveSonarComponent config;
-    config.sonarID = sonarID;
-    config.sonarMod = 2;  // 被动模式
-    config.sfb = 5000;
-    config.arrayNumber = 64;
-    config.fs = 8000;
-    config.SSpeed_range = 30;
-    config.Depth_range = 500.0f;
-    config.RPhi = 360.0f;
-    config.RTheta = 180.0f;
-    config.BandRange = 8000;
-    config.BandFormingAnum = 72;
-    config.BandFormingAdeg = 5.0f;
-    config.BandFormingPnum = 18;
-    config.BandFormingPdeg = 10.0f;
-    config.array_xyz = 0.0f;
-    config.array_work = true;
-    config.TrackingTime = 30;
-    config.Gnf = 20.0f;
-    config.DOA_mse_surf = 2.5f;
-    config.RelativeBandwidth = 2000;
-    config.RelativeTimewidth = 5.0f;
-    config.DetectionAlgorithm = 1;
-    config.BFAlgorithm = 2;
-    config.TrackingNum = 10;
+// ========== 数据生成函数实现 ==========
 
-    return config;
-}
-
-void MainWindow::onShowEquationResultsClicked()
+void MainWindow::generateAndSendPropagatedSoundData(const QVector<ChartPlatform>& targetPlatforms)
 {
-    if (!m_component) {
-        addLog("错误：声纳组件未初始化");
+    if (!m_component || !m_agent || targetPlatforms.isEmpty()) {
         return;
     }
-
-    // 将组件转换为 DeviceModel* 以访问声纳方程功能
-    DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
-    if (!deviceModel) {
-        addLog("错误：无法转换为 DeviceModel 类型");
-        return;
-    }
-
-
-
-
-
-    // *** 详细的调试信息 ***
-        addLog("=== 开始调试声纳方程计算状态 ===");
-
-        // 检查每个声纳的数据有效性
-        for (int sonarID = 0; sonarID < 4; sonarID++) {
-            bool dataValid = deviceModel->isEquationDataValid(sonarID);
-            addLog(QString("声纳%1数据有效性: %2").arg(sonarID).arg(dataValid ? "有效" : "无效"));
-
-            // 检查声纳状态
-            // 这里我们需要添加一个方法来获取声纳状态，或者直接检查
-        }
-
-
-
-    // 获取所有声纳的计算结果
-    auto results = deviceModel->getAllSonarEquationResults();
-
-    QString resultText;
-    resultText += "============ 声纳方程计算结果 ============\n";
-    resultText += QString("计算时间：%1\n").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss"));
-    resultText += "公式：SL-TL-NL+DI=X\n\n";
-
-    if (results.empty()) {
-        resultText += "暂无有效的计算结果\n";
-        resultText += "原因可能：\n";
-        resultText += "1. 数据未准备完整（需要平台噪声、环境噪声、传播声三种数据）\n";
-        resultText += "2. 数据已过期（超过5秒未更新）\n";
-        resultText += "3. 声纳未启用\n\n";
-        resultText += "建议：点击\"发送完整测试数据\"按钮，等待几秒后再查看结果。";
-    } else {
-        // 声纳名称映射
-        QStringList sonarNames = {"艏端声纳", "舷侧声纳", "粗拖声纳", "细拖声纳"};
-
-        for (int sonarID = 0; sonarID < 4; sonarID++) {
-            resultText += QString("%1 (ID=%2):\n").arg(sonarNames[sonarID]).arg(sonarID);
-
-            auto it = results.find(sonarID);
-            if (it != results.end()) {
-                double result = it->second;
-                // 正确的写法 - 使用 Qt 风格的占位符
-                resultText += QString(" X = %1\n").arg(QString::number(result, 'f', 3));
-
-                // 检查数据有效性
-                bool dataValid = deviceModel->isEquationDataValid(sonarID);
-                if (!dataValid) {
-                    resultText += " 数据已过期，结果可能不准确\n";
-                }
-            } else {
-                resultText += " 无计算结果（声纳可能未启用或数据不足）\n";
-            }
-            resultText += "\n";
-        }
-
-        // 添加说明
-        resultText += "说明：\n";
-        resultText += "• X值越大表示目标信号相对噪声越强\n";
-        resultText += "• 数据每5秒更新一次，过期数据会标注警告\n";
-        resultText += "• 只有启用的声纳才会进行计算\n";
-    }
-
-    // 更新显示
-    m_equationResultsTextEdit->setPlainText(resultText);
-
-    addLog("已更新声纳方程计算结果显示");
-}
-
-void MainWindow::onSendCompleteTestDataClicked()
-{
-    if (!m_component || !m_agent) {
-        addLog("错误：声纳组件或代理未初始化");
-        return;
-    }
-
-    addLog("开始发送完整测试数据...");
 
     try {
-        // 1. 发送环境噪声数据
-        CMsg_EnvironmentNoiseToSonarStruct envNoise;
+        // 创建传播声数据结构
+        CMsg_PropagatedContinuousSoundListStruct continuousSound = createPropagatedSoundData(targetPlatforms);
 
-        // 生成模拟的环境噪声频谱数据
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_real_distribution<float> envNoiseDist(25.0f, 40.0f);  // 25-40 dB
+        // 创建消息
+        CSimMessage continuousMsg;
+        continuousMsg.dataFormat = STRUCT;
+        continuousMsg.time = QDateTime::currentMSecsSinceEpoch();
+        continuousMsg.sender = 1;
+        continuousMsg.senderComponentId = 1;
+        continuousMsg.receiver = 1;
+        continuousMsg.data = &continuousSound;
+        continuousMsg.length = sizeof(continuousSound);
+        memcpy(continuousMsg.topic, MSG_PropagatedContinuousSound, strlen(MSG_PropagatedContinuousSound) + 1);
+
+        // 发送给声纳模型
+        m_component->onMessage(&continuousMsg);
+
+        addLog(QString("已生成并发送 %1 个目标的传播声数据").arg(targetPlatforms.size()));
+
+
+    } catch(const std::exception& e) {
+        addLog(QString("生成传播声数据时出错: %1").arg(e.what()));
+    } catch(...) {
+        addLog("生成传播声数据时发生未知错误");
+    }
+}
+
+CMsg_PropagatedContinuousSoundListStruct MainWindow::createPropagatedSoundData(const QVector<ChartPlatform>& targetPlatforms)
+{
+    CMsg_PropagatedContinuousSoundListStruct soundListStruct;
+
+    // 获取本艇位置
+    QPointF ownShipPos = m_seaChartWidget->getOwnShipPosition();
+
+    // 随机数生成器
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<float> signalDist(60.0f, 85.0f); // 信号强度范围
+
+    for (const auto& target : targetPlatforms) {
+        C_PropagatedContinuousSoundStruct soundData;
+
+        // 计算目标相对于本艇的位置参数
+        double deltaLon = target.position.x() - ownShipPos.x();
+        double deltaLat = target.position.y() - ownShipPos.y();
+
+        // 计算距离 (简化计算，单位：米)
+        double deltaXMeters = deltaLon * 111320.0; // 1度经度约111320米
+        double deltaYMeters = deltaLat * 111320.0; // 1度纬度约111320米
+        double distance = sqrt(deltaXMeters * deltaXMeters + deltaYMeters * deltaYMeters);
+
+        // 计算方位角 (相对于北向，顺时针为正)
+        double bearing = atan2(deltaXMeters, deltaYMeters) * 180.0 / M_PI;
+        if (bearing < 0) bearing += 360.0;
+
+        // 设置目标参数
+        soundData.targetDistance = static_cast<float>(distance);
+        soundData.arrivalSideAngle = static_cast<float>(bearing);
+        soundData.arrivalPitchAngle = 0.0f; // 假设目标在同一水平面
+        soundData.platType = 1; // 潜艇类型
+
+        // 生成模拟的频谱数据
+        // 根据距离调整信号强度：距离越远，信号越弱
+        float baseSignalLevel = 80.0f - static_cast<float>(distance / 1000.0f); // 每公里衰减1dB
+        baseSignalLevel = std::max(40.0f, std::min(85.0f, baseSignalLevel)); // 限制在40-85dB范围
 
         for (int i = 0; i < 5296; i++) {
-            envNoise.spectrumData[i] = envNoiseDist(gen);
+            // 添加一些随机变化和频率特性
+            float freqFactor = 1.0f + 0.1f * sin(i * 0.01f); // 模拟频率响应
+            float randomVariation = signalDist(gen) * 0.1f - 0.05f; // ±5%随机变化
+
+            soundData.spectrumData[i] = baseSignalLevel * freqFactor + randomVariation;
         }
-        envNoise.acousticVel = 1500.0f;
 
+        // 添加到列表
+        soundListStruct.propagatedContinuousList.push_back(soundData);
 
+        addLog(QString("目标 %1: 距离=%2km, 方位=%3°, 信号强度=%4dB")
+               .arg(target.name)
+               .arg(distance / 1000.0, 0, 'f', 1)
+               .arg(bearing, 0, 'f', 1)
+               .arg(baseSignalLevel, 0, 'f', 1));
+    }
 
-        // *** 打印环境噪声频谱数据 ***
-        addLog("=== 环境噪声频谱数据 ===");
-        QString envSpectrumInfo = "前100个值: ";
-        for (int i = 0; i < 100; i++) {
-            envSpectrumInfo += QString::number(envNoise.spectrumData[i], 'f', 2) + " ";
-        }
-        addLog(envSpectrumInfo);
+    return soundListStruct;
+}
 
-        float envSum = 0.0f, envMin = envNoise.spectrumData[0], envMax = envNoise.spectrumData[0];
-        for (int i = 0; i < 5296; i++) {
-            envSum += envNoise.spectrumData[i];
-            if (envNoise.spectrumData[i] < envMin) envMin = envNoise.spectrumData[i];
-            if (envNoise.spectrumData[i] > envMax) envMax = envNoise.spectrumData[i];
-        }
-        addLog(QString("环境噪声统计: 总和=%1, 平均=%2, 最小=%3, 最大=%4")
-               .arg(QString::number(envSum, 'f', 2))
-               .arg(QString::number(envSum/5296, 'f', 2))
-               .arg(QString::number(envMin, 'f', 2))
-               .arg(QString::number(envMax, 'f', 2)));
+void MainWindow::generateAndSendPlatformSelfSoundData()
+{
+    if (!m_component || !m_agent || m_platformSelfSoundSent) {
+        return; // 平台自噪声只需要发送一次
+    }
 
-
-
-
-
-        CSimMessage envMsg;
-        envMsg.dataFormat = STRUCT;
-        envMsg.time = QDateTime::currentMSecsSinceEpoch();
-        envMsg.sender = 1;
-        envMsg.senderComponentId = 1;
-        envMsg.receiver = 1885;
-        envMsg.data = &envNoise;
-        envMsg.length = sizeof(envNoise);
-        memcpy(envMsg.topic, MSG_EnvironmentNoiseToSonar, strlen(MSG_EnvironmentNoiseToSonar) + 1);
-
-        m_component->onMessage(&envMsg);
-        addLog("已发送环境噪声数据");
-
-        // 2. *** 准备平台自噪声数据 ***
-        CData_PlatformSelfSound* platformSelfSound = new CData_PlatformSelfSound();
-
-        // 为4个声纳位置创建自噪声数据
-        std::uniform_real_distribution<float> selfNoiseDist(30.0f, 50.0f);  // 30-50 dB
-
-        for (int sonarID = 0; sonarID < 4; sonarID++) {
-            C_SelfSoundSpectrumStruct spectrumStruct;
-            spectrumStruct.sonarID = sonarID;
-
-            // 生成频谱数据
-            for (int i = 0; i < 5296; i++) {
-                spectrumStruct.spectumData[i] = selfNoiseDist(gen);
-            }
-
-            platformSelfSound->selfSoundSpectrumList.push_back(spectrumStruct);
-
-
-
-
-
-
-
-            // *** 打印每个声纳的平台自噪声频谱数据 ***
-           addLog(QString("=== 平台自噪声频谱数据 (声纳%1) ===").arg(sonarID));
-           QString selfSpectrumInfo = "前100个值: ";
-           for (int i = 0; i < 100; i++) {
-               selfSpectrumInfo += QString::number(spectrumStruct.spectumData[i], 'f', 2) + " ";
-           }
-           addLog(selfSpectrumInfo);
-
-           float selfSum = 0.0f, selfMin = spectrumStruct.spectumData[0], selfMax = spectrumStruct.spectumData[0];
-           for (int i = 0; i < 5296; i++) {
-               selfSum += spectrumStruct.spectumData[i];
-               if (spectrumStruct.spectumData[i] < selfMin) selfMin = spectrumStruct.spectumData[i];
-               if (spectrumStruct.spectumData[i] > selfMax) selfMax = spectrumStruct.spectumData[i];
-           }
-           addLog(QString("声纳%1自噪声统计: 总和=%2, 平均=%3, 最小=%4, 最大=%5")
-                  .arg(sonarID)
-                  .arg(QString::number(selfSum, 'f', 2))
-                  .arg(QString::number(selfSum/5296, 'f', 2))
-                  .arg(QString::number(selfMin, 'f', 2))
-                  .arg(QString::number(selfMax, 'f', 2)));
-
-
-
-
-
-
-        }
+    try {
+        // 创建平台自噪声数据
+        CData_PlatformSelfSound* platformSelfSound = createPlatformSelfSoundData();
 
         // 创建 CSimData 包装器
         CSimData* selfSoundData = new CSimData();
         selfSoundData->dataFormat = STRUCT;
-        int64 currentTime = QDateTime::currentMSecsSinceEpoch();
-        selfSoundData->time = currentTime;  // 确保时间戳被设置
+        selfSoundData->time = QDateTime::currentMSecsSinceEpoch();
         selfSoundData->sender = m_agent->getPlatformEntity()->id;
         selfSoundData->receiver = m_agent->getPlatformEntity()->id;
         selfSoundData->componentId = 1;
@@ -750,221 +749,225 @@ void MainWindow::onSendCompleteTestDataClicked()
         selfSoundData->length = sizeof(*platformSelfSound);
         memcpy(selfSoundData->topic, Data_PlatformSelfSound, strlen(Data_PlatformSelfSound) + 1);
 
-        // *** 确认时间戳被正确设置 ***
+        // 存储到agent中
         int64 platformId = m_agent->getPlatformEntity()->id;
-        addLog(QString("准备存储平台自噪声数据: platformId=%1, time=%2").arg(platformId).arg(selfSoundData->time));
-
         m_agent->addSubscribedData(Data_PlatformSelfSound, platformId, selfSoundData);
 
-        // *** 验证数据是否正确存储 ***
-        CSimData* retrievedData = m_agent->getSubscribeSimData(Data_PlatformSelfSound, platformId);
-        if (retrievedData) {
-            addLog(QString("验证：平台自噪声数据已成功存储，时间戳: %1").arg(retrievedData->time));
-        } else {
-            addLog("验证失败：无法获取刚存储的平台自噪声数据！");
-        }
-
-
-
-
-
-
-        // 3. 发送传播后连续声数据
-
-        CMsg_PropagatedContinuousSoundListStruct continuousSound;
-
-        // 为4个声纳位置各创建一个传播声数据
-        std::uniform_real_distribution<float> signalDist(60.0f, 80.0f); // 60-80 dB（信号强度）
-
-        for (int sonarID = 0; sonarID < 4; sonarID++) {
-            C_PropagatedContinuousSoundStruct soundData;
-        // 设置目标参数
-            soundData.arrivalSideAngle = 30.0f + sonarID * 10.0f;  // 不同方向
-            soundData.arrivalPitchAngle = 5.0f;
-            soundData.targetDistance = 1000.0f + sonarID * 200.0f;
-            soundData.platType = 1; // 潜艇类型
-
-            // 生成频谱数据
-            for (int i = 0; i < 5296; i++) {
-                soundData.spectrumData[i] = signalDist(gen);
-            }
-
-
-            continuousSound.propagatedContinuousList.push_back(soundData);
-
-
-
-
-
-
-            // *** 打印每个传播声的频谱数据 ***
-            addLog(QString("=== 传播声频谱数据 (目标%1) ===").arg(sonarID));
-            QString propSpectrumInfo = "前100个值: ";
-            for (int i = 0; i < 100; i++) {
-                propSpectrumInfo += QString::number(soundData.spectrumData[i], 'f', 2) + " ";
-            }
-            addLog(propSpectrumInfo);
-
-            float propSum = 0.0f, propMin = soundData.spectrumData[0], propMax = soundData.spectrumData[0];
-            for (int i = 0; i < 5296; i++) {
-                propSum += soundData.spectrumData[i];
-                if (soundData.spectrumData[i] < propMin) propMin = soundData.spectrumData[i];
-                if (soundData.spectrumData[i] > propMax) propMax = soundData.spectrumData[i];
-            }
-            addLog(QString("目标%1传播声统计: 总和=%2, 平均=%3, 最小=%4, 最大=%5, 距离=%6m, 方位=%7°")
-                   .arg(sonarID)
-                   .arg(QString::number(propSum, 'f', 2))
-                   .arg(QString::number(propSum/5296, 'f', 2))
-                   .arg(QString::number(propMin, 'f', 2))
-                   .arg(QString::number(propMax, 'f', 2))
-                   .arg(QString::number(soundData.targetDistance, 'f', 1))
-                   .arg(QString::number(soundData.arrivalSideAngle, 'f', 1)));
-
-
-
-
-
-        }
-
-
-//        CMsg_PropagatedContinuousSoundListStruct continuousSound = createContinuousSoundData();
-
-        CSimMessage continuousMsg;
-        continuousMsg.dataFormat = STRUCT;
-        continuousMsg.time = QDateTime::currentMSecsSinceEpoch();
-        continuousMsg.sender = 1;
-        continuousMsg.senderComponentId = 1;
-        continuousMsg.receiver = 1885;
-        continuousMsg.data = &continuousSound;
-        continuousMsg.length = sizeof(continuousSound);
-        memcpy(continuousMsg.topic, MSG_PropagatedContinuousSound, strlen(MSG_PropagatedContinuousSound) + 1);
-
-        m_component->onMessage(&continuousMsg);
-        addLog("已发送传播后连续声数据");
-
-        // *** 关键步骤：手动触发 step() 方法让 DeviceModel 获取订阅数据 ***
-        currentTime = QDateTime::currentMSecsSinceEpoch();
-        int32 stepInterval = 1000;  // 1秒步长
-
-        m_component->step(currentTime, stepInterval);
-        addLog("已触发 step() 方法，DeviceModel 现在可以获取平台自噪声数据了");
-
-        addLog("完整测试数据发送完成！");
-        addLog("所有三种数据（环境噪声、平台自噪声、传播声）都已准备就绪");
-        addLog("点击\"显示计算结果\"查看声纳方程计算结果");
+        m_platformSelfSoundSent = true;
+        addLog("已生成并存储平台自噪声数据（4个声纳位置）");
 
     } catch(const std::exception& e) {
-        addLog(QString("发送测试数据时出错: %1").arg(e.what()));
+        addLog(QString("生成平台自噪声数据时出错: %1").arg(e.what()));
     } catch(...) {
-        addLog("发送测试数据时发生未知错误");
+        addLog("生成平台自噪声数据时发生未知错误");
     }
-
-
-
-
-//    QTimer::singleShot(100, this, [this]() {
-//        if (m_component) {
-//            int64 currentTime = QDateTime::currentMSecsSinceEpoch();
-//            m_component->step(currentTime, 1000);
-//            addLog("额外触发了一次 step() 方法");
-//        }
-//    });
 }
 
-
-
-
-
-
-
-void MainWindow::onSetDIParametersClicked()
+CData_PlatformSelfSound* MainWindow::createPlatformSelfSoundData()
 {
-    if (!m_component) {
-        addLog("错误：声纳组件未初始化");
-        return;
-    }
+    CData_PlatformSelfSound* platformSelfSound = new CData_PlatformSelfSound();
 
-    // 将组件转换为 DeviceModel* 以访问DI参数设置功能
-    DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
-    if (!deviceModel) {
-        addLog("错误：无法转换为 DeviceModel 类型");
-        return;
-    }
+    // 随机数生成器
+    std::random_device rd;
+    std::mt19937 gen(rd());
 
-    // 创建DI参数设置对话框
-    QDialog dialog(this);
-    dialog.setWindowTitle("设置声纳DI参数");
-    dialog.setModal(true);
-    dialog.resize(400, 300);
-
-    QVBoxLayout* dialogLayout = new QVBoxLayout(&dialog);
-
-    // 说明标签
-    QLabel* infoLabel = new QLabel("设置各声纳位置的DI计算参数\nDI = 20lg(f) + offset\n(频率上限5kHz)");
-    infoLabel->setStyleSheet("color: blue; font-weight: bold;");
-    dialogLayout->addWidget(infoLabel);
-
-    // 声纳参数设置
-    QStringList sonarNames = {"艏端声纳", "舷侧声纳", "粗拖声纳", "细拖声纳"};
-    QList<QDoubleSpinBox*> freqSpinBoxes;
-    QList<QDoubleSpinBox*> offsetSpinBoxes;
-
+    // 为4个声纳位置创建不同的自噪声数据
     for (int sonarID = 0; sonarID < 4; sonarID++) {
-        QGroupBox* sonarGroup = new QGroupBox(sonarNames[sonarID]);
-        QGridLayout* gridLayout = new QGridLayout(sonarGroup);
+        C_SelfSoundSpectrumStruct spectrumStruct;
+        spectrumStruct.sonarID = sonarID;
 
-        // 频率设置
-        QLabel* freqLabel = new QLabel("频率 (kHz):");
-        QDoubleSpinBox* freqSpinBox = new QDoubleSpinBox();
-        freqSpinBox->setRange(0.1, 5.0);
-        freqSpinBox->setDecimals(1);
-        freqSpinBox->setSingleStep(0.1);
-        freqSpinBox->setValue(3.0 + sonarID * 0.2);  // 默认值
+        // 根据声纳类型设置不同的噪声特性
+        float baseNoiseLevel = 35.0f; // 基础噪声级别
+        float noiseVariation = 10.0f; // 噪声变化范围
 
-        // 偏移量设置
-        QLabel* offsetLabel = new QLabel("偏移量:");
-        QDoubleSpinBox* offsetSpinBox = new QDoubleSpinBox();
-        offsetSpinBox->setRange(0.0, 20.0);
-        offsetSpinBox->setDecimals(1);
-        offsetSpinBox->setSingleStep(0.1);
-        offsetSpinBox->setValue(9.5 + sonarID * 0.1);  // 默认值
-
-        gridLayout->addWidget(freqLabel, 0, 0);
-        gridLayout->addWidget(freqSpinBox, 0, 1);
-        gridLayout->addWidget(offsetLabel, 1, 0);
-        gridLayout->addWidget(offsetSpinBox, 1, 1);
-
-        freqSpinBoxes.append(freqSpinBox);
-        offsetSpinBoxes.append(offsetSpinBox);
-
-        dialogLayout->addWidget(sonarGroup);
-    }
-
-    // 按钮
-    QHBoxLayout* buttonLayout = new QHBoxLayout();
-    QPushButton* okButton = new QPushButton("确定");
-    QPushButton* cancelButton = new QPushButton("取消");
-
-    connect(okButton, &QPushButton::clicked, &dialog, &QDialog::accept);
-    connect(cancelButton, &QPushButton::clicked, &dialog, &QDialog::reject);
-
-    buttonLayout->addWidget(okButton);
-    buttonLayout->addWidget(cancelButton);
-    dialogLayout->addLayout(buttonLayout);
-
-    // 显示对话框
-    if (dialog.exec() == QDialog::Accepted) {
-        // 应用设置
-        for (int sonarID = 0; sonarID < 4; sonarID++) {
-            double freq = freqSpinBoxes[sonarID]->value();
-            double offset = offsetSpinBoxes[sonarID]->value();
-
-            deviceModel->setDIParameters(sonarID, freq, offset);
-
-            addLog(QString("设置 %1 DI参数: f=%.1f kHz, offset=%.1f")
-                   .arg(sonarNames[sonarID]).arg(freq).arg(offset));
+        switch (sonarID) {
+            case 0: // 艏端声纳 - 受机械噪声影响较大
+                baseNoiseLevel = 40.0f;
+                noiseVariation = 8.0f;
+                break;
+            case 1: // 舷侧声纳 - 中等噪声级别
+                baseNoiseLevel = 35.0f;
+                noiseVariation = 6.0f;
+                break;
+            case 2: // 粗拖声纳 - 远离船体，噪声较低
+                baseNoiseLevel = 30.0f;
+                noiseVariation = 5.0f;
+                break;
+            case 3: // 细拖声纳 - 噪声最低
+                baseNoiseLevel = 28.0f;
+                noiseVariation = 4.0f;
+                break;
         }
 
-        addLog("所有声纳DI参数设置完成");
+        std::uniform_real_distribution<float> noiseDist(
+            baseNoiseLevel - noiseVariation/2,
+            baseNoiseLevel + noiseVariation/2
+        );
+
+        // 生成频谱数据
+        for (int i = 0; i < 5296; i++) {
+            // 添加频率相关的噪声特性
+            float freqFactor = 1.0f - 0.3f * (i / 5296.0f); // 高频噪声衰减
+            spectrumStruct.spectumData[i] = noiseDist(gen) * freqFactor;
+        }
+
+        platformSelfSound->selfSoundSpectrumList.push_back(spectrumStruct);
+
+        addLog(QString("声纳%1自噪声: 基准%.1fdB±%.1fdB").arg(sonarID).arg(baseNoiseLevel).arg(noiseVariation));
     }
+
+    return platformSelfSound;
+}
+
+void MainWindow::generateAndSendEnvironmentNoiseData()
+{
+    if (!m_component || m_environmentNoiseSent) {
+        return; // 环境噪声只需要发送一次
+    }
+
+    try {
+        // 创建环境噪声数据
+        CMsg_EnvironmentNoiseToSonarStruct envNoise = createEnvironmentNoiseData();
+
+        // 创建消息
+        CSimMessage envMsg;
+        envMsg.dataFormat = STRUCT;
+        envMsg.time = QDateTime::currentMSecsSinceEpoch();
+        envMsg.sender = 1;
+        envMsg.senderComponentId = 1;
+        envMsg.receiver = 1;
+        envMsg.data = &envNoise;
+        envMsg.length = sizeof(envNoise);
+        memcpy(envMsg.topic, MSG_EnvironmentNoiseToSonar, strlen(MSG_EnvironmentNoiseToSonar) + 1);
+
+        // 发送给声纳模型
+        m_component->onMessage(&envMsg);
+
+        m_environmentNoiseSent = true;
+        addLog("已生成并发送海洋环境噪声数据");
+
+    } catch(const std::exception& e) {
+        addLog(QString("生成环境噪声数据时出错: %1").arg(e.what()));
+    } catch(...) {
+        addLog("生成环境噪声数据时发生未知错误");
+    }
+}
+
+CMsg_EnvironmentNoiseToSonarStruct MainWindow::createEnvironmentNoiseData()
+{
+    CMsg_EnvironmentNoiseToSonarStruct envNoise;
+
+    // 设置环境参数
+    envNoise.acousticVel = 1500.0f; // 声速 m/s
+
+    // 生成模拟的环境噪声频谱数据
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<float> envNoiseDist(20.0f, 35.0f);  // 20-35 dB
+
+    for (int i = 0; i < 5296; i++) {
+        // 模拟海洋环境噪声的频率特性
+        // 低频噪声较高，高频噪声较低
+        float freqRatio = static_cast<float>(i) / 5296.0f;
+        float freqFactor = 1.5f - freqRatio; // 高频衰减
+
+        envNoise.spectrumData[i] = envNoiseDist(gen) * freqFactor;
+    }
+
+    addLog("环境噪声特性: 20-35dB，低频偏高，高频衰减");
+    return envNoise;
+}
+
+void MainWindow::updateSonarEquationResults()
+{
+    if (!m_component) {
+        m_equationResultsDisplay->setPlainText("错误：声纳组件未初始化");
+        return;
+    }
+
+    // 将组件转换为 DeviceModel* 以访问多目标结果
+    DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
+    if (!deviceModel) {
+        m_equationResultsDisplay->setPlainText("错误：无法转换为 DeviceModel 类型");
+        return;
+    }
+
+    // 获取所有声纳的计算结果
+    auto allResults = deviceModel->getAllSonarTargetsResults();
+
+    QString resultText = formatSonarResults(allResults);
+    m_equationResultsDisplay->setPlainText(resultText);
+
+    addLog("已更新声纳方程计算结果显示");
+}
+
+QString MainWindow::formatSonarResults(const std::map<int, std::vector<DeviceModel::TargetEquationResult>>& allResults)
+{
+    QString resultText;
+    resultText += "============ 多目标声纳方程计算结果 ============\n";
+    resultText += QString("更新时间：%1\n").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss"));
+    resultText += "公式：SL-TL-NL+DI=X (每个目标独立计算)\n\n";
+
+    if (allResults.empty()) {
+        resultText += "暂无有效的计算结果\n";
+        resultText += "可能原因：\n";
+        resultText += "1. 没有目标平台数据\n";
+        resultText += "2. 声纳未启用\n";
+        resultText += "3. 基础数据未准备完整\n\n";
+        resultText += "建议：在海图上添加目标舰船，确保声纳已启用。";
+        return resultText;
+    }
+
+    int totalValidTargets = 0;
+
+    for (int sonarID = 0; sonarID < 4; sonarID++) {
+        resultText += QString("%1 (ID=%2):\n").arg(SONAR_NAMES[sonarID]).arg(sonarID);
+
+        auto it = allResults.find(sonarID);
+        if (it != allResults.end()) {
+            const auto& targets = it->second;
+
+            if (targets.empty()) {
+                resultText += " 无目标数据\n";
+            } else {
+                int validCount = 0;
+                for (const auto& target : targets) {
+                    if (target.isValid) {
+                        validCount++;
+                        totalValidTargets++;
+                        resultText += QString(" 目标%1: X=%2 (距离=%3km, 方位=%4°)\n")
+                                     .arg(target.targetId)
+                                     .arg(target.equationResult, 0, 'f', 2)
+                                     .arg(target.targetDistance / 1000.0, 0, 'f', 1)
+                                     .arg(target.targetBearing, 0, 'f', 1);
+                    } else {
+                        resultText += QString(" 目标%1: 计算失败\n").arg(target.targetId);
+                    }
+                }
+
+                if (validCount == 0) {
+                    resultText += " 所有目标计算失败\n";
+                } else {
+                    resultText += QString(" 有效目标: %1/%2\n").arg(validCount).arg(targets.size());
+                }
+            }
+        } else {
+            if (!m_sonarEnabledStates[sonarID]) {
+                resultText += " 声纳已禁用\n";
+            } else {
+                resultText += " 无计算结果\n";
+            }
+        }
+        resultText += "\n";
+    }
+
+    // 添加统计信息
+    resultText += QString("总计有效目标检测: %1\n").arg(totalValidTargets);
+    resultText += "\n说明：\n";
+    resultText += "• X值越大表示目标信号相对噪声越强\n";
+    resultText += "• 每个声纳最多可同时跟踪8个目标\n";
+    resultText += "• 超出范围的目标不会被计算\n";
+    resultText += "• 数据每5秒自动更新一次";
+
+    return resultText;
 }

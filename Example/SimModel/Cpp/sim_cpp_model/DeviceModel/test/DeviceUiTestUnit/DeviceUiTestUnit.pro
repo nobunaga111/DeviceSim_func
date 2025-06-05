@@ -31,13 +31,15 @@ SOURCES += \
         src/mainWithUi.cpp \
         src/mainwindow.cpp \
         ../../src/common/DMLogger.cpp \
-        ../../src/devicemodel.cpp
+        ../../src/devicemodel.cpp \
+        src/seachartwidget.cpp
 
 HEADERS += \
     src/DeviceModelAgent.h \
     src/mainwindow.h \
     ../../src/common/DMLogger.h \
-    ../../src/devicemodel.h
+    ../../src/devicemodel.h \
+    src/seachartwidget.h
 
 FORMS += src/mainwindow.ui  # 声明 UI 文件
 

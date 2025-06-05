@@ -1,4 +1,4 @@
-// 完整的 devicemodel.h 文件，包含所有声纳方程计算相关的声明
+// 完整的 devicemodel.h 文件，支持多目标探测的声纳方程计算
 
 #ifndef DEVICEMODEL_H
 #define DEVICEMODEL_H
@@ -54,19 +54,41 @@ public:
     */
     const char* getVersion() override;
 
-    // *** 声纳方程计算相关的公共接口 ***
-    /**
-     * @brief 获取指定声纳的声纳方程计算结果
-     * @param sonarID 声纳ID (0-3)
-     * @return 声纳方程计算结果X值，如果没有有效结果返回0.0
-     */
-    double getSonarEquationResult(int sonarID);
+    // *** 多目标声纳方程计算相关的公共接口 ***
 
     /**
-     * @brief 获取所有声纳的声纳方程计算结果
-     * @return 包含所有声纳计算结果的map (sonarID -> X值)
+     * @brief 单个目标的声纳方程计算结果
      */
-    std::map<int, double> getAllSonarEquationResults();
+    struct TargetEquationResult {
+        int targetId;           // 目标ID
+        double equationResult;  // 声纳方程计算结果X值
+        float targetDistance;   // 目标距离
+        float targetBearing;    // 目标方位角
+        bool isValid;          // 结果是否有效
+
+        TargetEquationResult() : targetId(-1), equationResult(0.0),
+                               targetDistance(0.0), targetBearing(0.0), isValid(false) {}
+    };
+
+    /**
+     * @brief 获取指定声纳的所有目标计算结果
+     * @param sonarID 声纳ID (0-3)
+     * @return 该声纳的所有目标计算结果
+     */
+    std::vector<TargetEquationResult> getSonarTargetsResults(int sonarID);
+
+    /**
+     * @brief 获取所有声纳的所有目标计算结果
+     * @return 包含所有声纳所有目标计算结果的map (sonarID -> 目标结果列表)
+     */
+    std::map<int, std::vector<TargetEquationResult>> getAllSonarTargetsResults();
+
+    /**
+     * @brief 获取指定声纳可探测到的目标数量
+     * @param sonarID 声纳ID (0-3)
+     * @return 可探测到的目标数量
+     */
+    int getSonarDetectedTargetCount(int sonarID);
 
     /**
      * @brief 设置指定声纳的DI计算参数
@@ -82,6 +104,10 @@ public:
      * @return true if data is valid and recent
      */
     bool isEquationDataValid(int sonarID);
+
+    // *** 兼容性接口 - 用于现有代码 ***
+    double getSonarEquationResult(int sonarID);
+    std::map<int, double> getAllSonarEquationResults();
 
 private:
     /**
@@ -121,12 +147,25 @@ private:
 
     void initDetectionTrack();
 
-    // *** 声纳方程计算相关的私有方法 ***
+    // *** 多目标声纳方程计算相关的私有方法 ***
 
-    // 声纳方程计算相关的数据结构
-    struct SonarEquationCache {
-        // 传播后连续声数据缓存 (按声纳ID分别存储)
-        std::map<int, std::vector<float>> propagatedContinuousSpectrum;
+    // 单个目标的数据结构
+    struct TargetData {
+        int targetId;                           // 目标ID
+        std::vector<float> propagatedSpectrum;  // 传播后连续声频谱
+        float targetDistance;                   // 目标距离
+        float targetBearing;                    // 目标方位角
+        int64 lastUpdateTime;                   // 最后更新时间
+        bool isValid;                          // 数据是否有效
+
+        TargetData() : targetId(-1), targetDistance(0.0), targetBearing(0.0),
+                      lastUpdateTime(0), isValid(false) {}
+    };
+
+    // 多目标声纳方程计算的数据缓存结构
+    struct MultiTargetSonarEquationCache {
+        // 每个声纳可探测的目标数据 (声纳ID -> 目标数据列表，最多8个目标)
+        std::map<int, std::vector<TargetData>> sonarTargetsData;
 
         // 平台区噪声数据缓存 (按声纳ID分别存储)
         std::map<int, std::vector<float>> platformSelfSoundSpectrum;
@@ -134,16 +173,14 @@ private:
         // 海洋环境噪声数据缓存 (按声纳ID分别存储)
         std::map<int, std::vector<float>> environmentNoiseSpectrum;
 
-        // 数据更新时间戳 (用于检查数据时效性)
-        int64 lastPropagatedSoundTime;
+        // 数据更新时间戳
         int64 lastPlatformSoundTime;
         int64 lastEnvironmentNoiseTime;
 
-        // 声纳方程计算结果缓存
-        std::map<int, double> equationResults;  // sonarID -> X值
+        // 多目标声纳方程计算结果缓存 (声纳ID -> 目标结果列表)
+        std::map<int, std::vector<TargetEquationResult>> multiTargetEquationResults;
 
-        SonarEquationCache() {
-            lastPropagatedSoundTime = 0;
+        MultiTargetSonarEquationCache() {
             lastPlatformSoundTime = 0;
             lastEnvironmentNoiseTime = 0;
         }
@@ -156,10 +193,10 @@ private:
     };
 
     /**
-     * @brief 更新传播后连续声数据缓存
+     * @brief 更新传播后连续声数据缓存（多目标版本）
      * @param simMessage 接收到的传播声消息
      */
-    void updatePropagatedSoundCache(CSimMessage* simMessage);
+    void updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage);
 
     /**
      * @brief 更新平台区噪声数据缓存
@@ -188,16 +225,33 @@ private:
     double calculateDI(int sonarID);
 
     /**
-     * @brief 计算单个声纳的声纳方程 SL-TL-NL+DI=X
+     * @brief 计算单个目标的声纳方程 SL-TL-NL+DI=X
      * @param sonarID 声纳ID
+     * @param targetData 目标数据
      * @return X值
      */
-    double calculateSonarEquation(int sonarID);
+    double calculateTargetSonarEquation(int sonarID, const TargetData& targetData);
 
     /**
-     * @brief 执行所有声纳的声纳方程计算 (在step中调用)
+     * @brief 执行所有声纳所有目标的声纳方程计算 (在step中调用)
      */
-    void performSonarEquationCalculation();
+    void performMultiTargetSonarEquationCalculation();
+
+    /**
+     * @brief 判断目标是否在声纳的探测范围内
+     * @param sonarID 声纳ID
+     * @param targetBearing 目标方位角
+     * @param targetDistance 目标距离
+     * @return true if target is in detection range
+     */
+    bool isTargetInSonarRange(int sonarID, float targetBearing, float targetDistance);
+
+    /**
+     * @brief 获取声纳的探测范围角度
+     * @param sonarID 声纳ID
+     * @return 探测角度范围 (起始角度, 结束角度)
+     */
+    std::pair<float, float> getSonarDetectionAngleRange(int sonarID);
 
 private:
     CSimModelAgentBase* m_agent;               // 代理对象
@@ -240,21 +294,42 @@ private:
     std::ofstream log;
     bool ifOutput = true;
 
-    // *** 声纳方程计算相关的成员变量 ***
-    SonarEquationCache m_equationCache;  // 声纳方程数据缓存
+    // *** 多目标声纳方程计算相关的成员变量 ***
+    MultiTargetSonarEquationCache m_multiTargetCache;  // 多目标声纳方程数据缓存
 
     // 声纳方程计算常量
     static const int SPECTRUM_DATA_SIZE = 5296;           // 频谱数据大小
     static const int DATA_UPDATE_INTERVAL_MS = 5000;     // 数据更新间隔(ms)
+    static const int MAX_TARGETS_PER_SONAR = 8;          // 每个声纳最大目标数
+    static const int MAX_DETECTION_RANGE = 30000;        // 最大探测距离(米)
     static constexpr const double MAX_FREQUENCY_KHZ = 5.0;         // DI计算的最大频率(kHz)
 
     // 为4个声纳位置预设DI参数 (可通过setDIParameters修改)
     std::map<int, DIParameters> m_diParameters = {
-        {0, {5.0, 17.5}},  // 艏端声纳: f=3kHz, offset=9.5
-        {1, {3.0, 23.6}},  // 舷侧声纳: f=3.2kHz, offset=9.6
-        {2, {0.5, 24}},  // 粗拖声纳: f=2.8kHz, offset=9.4
-        {3, {0.3, 25}}   // 细拖声纳: f=3.5kHz, offset=9.7
+        {0, {5.0, 17.5}},  // 艏端声纳: f=5kHz, offset=17.5
+        {1, {3.0, 23.6}},  // 舷侧声纳: f=3kHz, offset=23.6
+        {2, {0.5, 24}},    // 粗拖声纳: f=0.5kHz, offset=24
+        {3, {0.3, 25}}     // 细拖声纳: f=0.3kHz, offset=25
     };
+
+    // 兼容性支持 - 保留旧的缓存结构用于向后兼容
+    struct SonarEquationCache {
+        std::map<int, std::vector<float>> propagatedContinuousSpectrum;
+        std::map<int, std::vector<float>> platformSelfSoundSpectrum;
+        std::map<int, std::vector<float>> environmentNoiseSpectrum;
+        int64 lastPropagatedSoundTime;
+        int64 lastPlatformSoundTime;
+        int64 lastEnvironmentNoiseTime;
+        std::map<int, double> equationResults;
+
+        SonarEquationCache() {
+            lastPropagatedSoundTime = 0;
+            lastPlatformSoundTime = 0;
+            lastEnvironmentNoiseTime = 0;
+        }
+    };
+
+    SonarEquationCache m_equationCache;  // 保留用于兼容性
 };
 
 #endif // DEVICEMODEL_H
