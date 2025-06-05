@@ -850,7 +850,10 @@ CData_PlatformSelfSound* MainWindow::createPlatformSelfSoundData()
 
         platformSelfSound->selfSoundSpectrumList.push_back(spectrumStruct);
 
-        addLog(QString("声纳%1自噪声: 基准%.1fdB±%.1fdB").arg(sonarID).arg(baseNoiseLevel).arg(noiseVariation));
+        addLog(QString("声纳%1自噪声: 基准%2dB±%3dB")
+               .arg(sonarID)
+               .arg(baseNoiseLevel, 0, 'f', 1)
+               .arg(noiseVariation, 0, 'f', 1));
     }
 
     return platformSelfSound;
@@ -1064,11 +1067,11 @@ void MainWindow::generateAndSendPlatformMotionData()
         int64 platformId = m_agent->getPlatformEntity()->id;
         m_agent->addSubscribedData(Data_Motion, platformId, simData);
 
-        addLog(QString("已更新平台机动数据 - 位置:(%.4f, %.4f), 朝向:%.1f°, 速度:%.1f节")
-               .arg(ownShipPos.x())
-               .arg(ownShipPos.y())
-               .arg(ownShipHeading)
-               .arg(ownShipSpeed));
+        addLog(QString("已更新平台机动数据 - 位置:(%1, %2), 朝向:%3°, 速度:%4节")
+               .arg(ownShipPos.x(), 0, 'f', 4)
+               .arg(ownShipPos.y(), 0, 'f', 4)
+               .arg(ownShipHeading, 0, 'f', 1)
+               .arg(ownShipSpeed, 0, 'f', 1));
 
     } catch(const std::exception& e) {
         addLog(QString("生成平台机动数据时出错: %1").arg(e.what()));

@@ -26,6 +26,8 @@ SeaChartWidget::SeaChartWidget(QWidget *parent)
     , m_isDragging(false)
     , m_isDraggingPlatform(false)
     , m_draggedPlatformId(-1)
+    , m_dataGenerationTimer(nullptr)
+    , m_platformMoveTimer(nullptr)
 {
     setMinimumSize(600, 400);
     setAttribute(Qt::WA_OpaquePaintEvent);
@@ -51,6 +53,15 @@ SeaChartWidget::SeaChartWidget(QWidget *parent)
     m_dataGenerationTimer->start();
 
     qDebug() << "SeaChartWidget initialized with center:" << m_chartCenter << "scale:" << m_chartScale;
+
+
+
+
+
+    // 在构造函数中添加移动定时器
+    m_platformMoveTimer = new QTimer(this);
+    connect(m_platformMoveTimer, &QTimer::timeout, this, &SeaChartWidget::updatePlatformMovement);
+    m_platformMoveTimer->start(1000); // 每秒更新一次位置
 }
 
 SeaChartWidget::~SeaChartWidget()
@@ -715,15 +726,29 @@ void SeaChartWidget::drawPlatform(QPainter& painter, const ChartPlatform& platfo
 
     painter.restore();
 
+
+
+
     // 绘制平台标签
     painter.setPen(Qt::white);
     QFont font = painter.font();
     font.setPointSize(8);
     painter.setFont(font);
 
-    QString label = QString("%1\n%2 节")
-                    .arg(platform.name)
-                    .arg(platform.speed, 0, 'f', 1);
+    QString label;
+    if (platform.isOwnShip) {
+        // 本艇只显示名称，不显示速度
+        label = platform.name;
+    } else {
+        // 目标舰船显示名称和速度，中间加空格
+        label = QString("%1\n %2 节")
+                .arg(platform.name)
+                .arg(platform.speed, 0, 'f', 1);
+    }
+
+
+
+
 
     QFontMetrics fm(font);
     QRect textRect = fm.boundingRect(label);
@@ -824,15 +849,15 @@ void SeaChartWidget::drawSonarRanges(QPainter& painter)
                        qtSweepAngle * 16);
 
         // *** 调试信息：记录绘制详情 ***
-        qDebug() << QString("Sonar %1: pos=(%2,%3), screen=(%4,%5), start=%.1f°, end=%.1f°, radius=%.1fm")
+        qDebug() << QString("Sonar %1: pos=(%2,%3), screen=(%4,%5), start=%6°, end=%7°, radius=%8m")
                     .arg(range.sonarId)
                     .arg(ownShipPos.x(), 0, 'f', 6)
                     .arg(ownShipPos.y(), 0, 'f', 6)
                     .arg(ownShipScreen.x())
                     .arg(ownShipScreen.y())
-                    .arg(startAngle)
-                    .arg(endAngle)
-                    .arg(radiusPixels * m_chartScale);
+                    .arg(startAngle, 0, 'f', 1)
+                    .arg(endAngle, 0, 'f', 1)
+                    .arg(radiusPixels * m_chartScale, 0, 'f', 1);
     }
 
     painter.restore();
@@ -1984,4 +2009,29 @@ double SeaChartWidget::getOwnShipHeadingSafe() const
     }
 
     return m_ownShip->heading;
+}
+
+
+//移动更新方法
+void SeaChartWidget::updatePlatformMovement()
+{
+    for (auto& platform : m_platforms) {
+        if (!platform.isOwnShip && platform.speed > 0) {
+            // 根据航向和速度计算新位置
+            double speedMs = platform.speed * 0.514444; // 节转米/秒
+            double deltaTime = 1.0; // 1秒间隔
+            double distance = speedMs * deltaTime; // 移动距离（米）
+
+            // 计算新的经纬度位置
+            double headingRad = platform.heading * M_PI / 180.0;
+            double deltaLat = (distance * cos(headingRad)) / 111320.0;
+            double deltaLon = (distance * sin(headingRad)) / 111320.0;
+
+            platform.position.setX(platform.position.x() + deltaLon);
+            platform.position.setY(platform.position.y() + deltaLat);
+        }
+    }
+
+    emit targetPlatformsUpdated(getTargetPlatforms());
+    update();
 }

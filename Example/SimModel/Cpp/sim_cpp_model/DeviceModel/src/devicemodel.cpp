@@ -640,9 +640,12 @@ double DeviceModel::calculateDI(int sonarID)
 
 double DeviceModel::calculateTargetSonarEquation(int sonarID, const TargetData& targetData)
 {
+    LOG_INFOF("=== Calculating equation for sonar %d, target %d ===", sonarID, targetData.targetId);
+
     // 检查目标数据有效性
     if (!targetData.isValid || targetData.propagatedSpectrum.empty()) {
-        LOG_WARNF("Invalid target data for sonar %d, target %d", sonarID, targetData.targetId);
+        LOG_WARNF("Invalid target data for sonar %d, target %d - isValid:%d, spectrumSize:%zu",
+                  sonarID, targetData.targetId, targetData.isValid, targetData.propagatedSpectrum.size());
         return 0.0;
     }
 
@@ -650,16 +653,27 @@ double DeviceModel::calculateTargetSonarEquation(int sonarID, const TargetData& 
     auto platformIt = m_multiTargetCache.platformSelfSoundSpectrum.find(sonarID);
     auto environmentIt = m_multiTargetCache.environmentNoiseSpectrum.find(sonarID);
 
-    if (platformIt == m_multiTargetCache.platformSelfSoundSpectrum.end() ||
-        environmentIt == m_multiTargetCache.environmentNoiseSpectrum.end()) {
-        LOG_WARNF("Missing platform or environment noise data for sonar %d", sonarID);
+    if (platformIt == m_multiTargetCache.platformSelfSoundSpectrum.end()) {
+        LOG_WARNF("Missing platform noise data for sonar %d", sonarID);
         return 0.0;
     }
+
+    if (environmentIt == m_multiTargetCache.environmentNoiseSpectrum.end()) {
+        LOG_WARNF("Missing environment noise data for sonar %d", sonarID);
+        return 0.0;
+    }
+
+    LOG_INFOF("Sonar %d data check passed - platform spectrum size:%zu, environment spectrum size:%zu, target spectrum size:%zu",
+              sonarID, platformIt->second.size(), environmentIt->second.size(), targetData.propagatedSpectrum.size());
 
     // 计算频谱累加求和
     double propagatedSum = calculateSpectrumSum(targetData.propagatedSpectrum);     // |阵元谱级|
     double platformSum = calculateSpectrumSum(platformIt->second);                  // |平台背景|
     double environmentSum = calculateSpectrumSum(environmentIt->second);            // |海洋噪声|
+
+    LOG_INFOF("Spectrum sums - propagated:%.2f, platform:%.2f, environment:%.2f",
+                 propagatedSum, platformSum, environmentSum);
+
 
     // 计算SL-TL-NL = 10lg |阵元谱级|^2/(|平台背景|^2+|海洋噪声|^2)
     double propagatedSquare = propagatedSum * propagatedSum;            // |阵元谱级|^2

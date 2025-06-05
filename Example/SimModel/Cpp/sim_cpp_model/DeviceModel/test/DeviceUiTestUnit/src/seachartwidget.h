@@ -311,6 +311,7 @@ private slots:
     void onEditPlatform();
     void onCenterOnOwnShip();
     void onAutoGenerateTargets();
+    void updatePlatformMovement();  // 更新平台移动
 
 private:
     /**
@@ -421,6 +422,7 @@ private:
      */
     double getOwnShipHeadingSafe() const;
 
+
 private:
     MainWindow* m_mainWindow;                       // 主窗口引用
 
@@ -467,6 +469,8 @@ private:
 
     // 数据生成定时器
     QTimer* m_dataGenerationTimer;                  // 数据生成定时器 (5秒间隔)
+
+    QTimer* m_platformMoveTimer;                    // 平台移动定时器 (1秒间隔)
 
     // 绘制参数
     static const int PLATFORM_SIZE = 12;            // 平台绘制大小
