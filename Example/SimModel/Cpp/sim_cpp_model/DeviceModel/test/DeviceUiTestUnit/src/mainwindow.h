@@ -50,7 +50,7 @@ private slots:
 
     //========== 消息发送功能 ==========//
     // 发送连续声数据按钮点击事件
-    void onSendContinuousSoundClicked();
+//    void onSendContinuousSoundClicked();
 
     //========== 日志功能 ==========//
     // 清除日志按钮点击事件
@@ -84,7 +84,7 @@ private:
     // 创建被动声纳初始化数据
     CAttr_PassiveSonarComponent createPassiveSonarConfig(int sonarID);
     // 创建连续声数据
-    CMsg_PropagatedContinuousSoundListStruct createContinuousSoundData();
+//    CMsg_PropagatedContinuousSoundListStruct createContinuousSoundData();
     // 初始化所有声纳状态
     void initializeSonarStates();
 
@@ -108,7 +108,7 @@ private:
     QMap<int, SonarControls> m_sonarControls; // 声纳控制组件映射表
 
     //========== 消息发送组件 ==========//
-    QPushButton* m_sendContinuousSoundButton; // 发送连续声数据按钮
+//    QPushButton* m_sendContinuousSoundButton; // 发送连续声数据按钮
 
     //========== 声纳方程界面组件 ==========//
     QGroupBox* m_equationGroupBox;              // 声纳方程测试组

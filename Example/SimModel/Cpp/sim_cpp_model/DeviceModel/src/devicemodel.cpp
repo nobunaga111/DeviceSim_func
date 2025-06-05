@@ -86,6 +86,8 @@ bool DeviceModel::init(CSimModelAgentBase* simModelAgent, CSimComponentAttribute
 
     initDetectionTrack();
 
+    m_initialized = true;
+
     return true;
 }
 
@@ -356,10 +358,10 @@ void DeviceModel::step(int64 curTime, int32 step)
 
         CSimData* selfSoundData = m_agent->getSubscribeSimData(Data_PlatformSelfSound, platformId);
         if (selfSoundData) {
-            LOG_INFOF("✅ Retrieved platform self sound data with timestamp: %lld", selfSoundData->time);
+            LOG_INFOF("Retrieved platform self sound data with timestamp: %lld", selfSoundData->time);
             handlePlatformSelfSound(selfSoundData);
         } else {
-            LOG_WARN("❌ Failed to retrieve platform self sound data in step()");
+            LOG_WARN("Failed to retrieve platform self sound data in step()");
             LOG_WARNF("Topic: %s, PlatformId: %lld", Data_PlatformSelfSound, platformId);
         }
 
