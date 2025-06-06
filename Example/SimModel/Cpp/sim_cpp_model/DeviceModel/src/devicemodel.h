@@ -183,10 +183,10 @@ private:
         std::map<int, std::vector<TargetData>> sonarTargetsData;
 
         // 平台区噪声数据缓存 (按声纳ID分别存储)
-        std::map<int, std::vector<float>> platformSelfSoundSpectrum;
+        std::map<int, std::vector<float>> platformSelfSoundSpectrumMap;
 
         // 海洋环境噪声数据缓存 (按声纳ID分别存储)
-        std::map<int, std::vector<float>> environmentNoiseSpectrum;
+        std::map<int, std::vector<float>> environmentNoiseSpectrumMap;
 
         // 数据更新时间戳
         int64 lastPlatformSoundTime;
@@ -298,14 +298,14 @@ private:
     std::map<int, DetectionTrackData> m_detectionData;  // 各声纳阵列的探测数据
 
     // 环境数据
-    float m_environmentNoiseLevel;              // 环境噪声级别
+//    float m_environmentNoiseLevel;              // 环境噪声级别
 
     // 处理周期控制
-    int m_passiveProcessInterval;               // 被动处理周期（ms）
-    int m_activeProcessInterval;                // 主动处理周期（ms）
-    int m_scoutingProcessInterval;              // 侦察处理周期（ms）
-    int64 m_lastProcessTime;                    // 上次处理时间
-    int m_nextTrackId;                          // 下一个跟踪ID
+//    int m_passiveProcessInterval;               // 被动处理周期（ms）
+//    int m_activeProcessInterval;                // 主动处理周期（ms）
+//    int m_scoutingProcessInterval;              // 侦察处理周期（ms）
+//    int64 m_lastProcessTime;                    // 上次处理时间
+//    int m_nextTrackId;                          // 下一个跟踪ID
 
     // *** 多目标声纳方程计算相关的成员变量 ***
     MultiTargetSonarEquationCache m_multiTargetCache;  // 多目标声纳方程数据缓存

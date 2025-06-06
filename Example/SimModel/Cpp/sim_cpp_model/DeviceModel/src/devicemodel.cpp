@@ -18,13 +18,8 @@ constexpr const double DeviceModel::MAX_FREQUENCY_KHZ;
 DeviceModel::DeviceModel()
 {
     m_agent = nullptr; // CSimModelAgentBase 代理对象
+
     m_initialized = false; // 声纳状态信息 初始化标志
-    m_environmentNoiseLevel = 60.0f; // 环境噪声级别
-    m_passiveProcessInterval = 1000; // 被动处理周期（ms）
-    m_activeProcessInterval = 2000; // 主动处理周期（ms）
-    m_scoutingProcessInterval = 3000; // 侦察处理周期（ms）
-    m_lastProcessTime = 0; // 上次处理时间
-    m_nextTrackId = 1; // 下一个跟踪ID
 
     // 初始化多目标缓存
     m_multiTargetCache = MultiTargetSonarEquationCache();
@@ -44,32 +39,12 @@ DeviceModel::DeviceModel()
 
     LOG_INFO("Sonar model created with multi-target equation calculation capability");
 
-//    log.open(logFileName.toStdString(), std::ios::out);
-//    if (!log.is_open()) {
-//        std::cerr << "Failed to open log file: " << logFileName.toStdString() << std::endl;
-//    } else {
-//        // 在日志文件开头写入启动信息
-//        log << "========================================" << std::endl;
-//        log << "Device Model Log Started" << std::endl;
-//        log << "Timestamp: " << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss").toStdString() << std::endl;
-//        log << "========================================" << std::endl;
-//        log.flush();
-//    }
-
     // 尝试加载配置文件，如果不存在则使用默认值
     loadThresholdConfig("threshold_config.ini");
 
     LOG_INFO("声纳模型已创建，支持可配置探测阈值");
 }
 
-DeviceModel::~DeviceModel()
-{
-    LOG_INFO("Sonar model destroyed");
-
-//    if (log.is_open()) {
-//        log.close();
-//    }
-}
 
 void DeviceModel::initDetectionTrack()
 {
@@ -509,7 +484,7 @@ void DeviceModel::updateEnvironmentNoiseCache(CSimMessage* simMessage)
 
     // 环境噪声对所有声纳位置都是相同的，为每个声纳ID都存储一份
     for (int sonarID = 0; sonarID < 4; sonarID++) {
-        m_multiTargetCache.environmentNoiseSpectrum[sonarID] = spectrum;
+        m_multiTargetCache.environmentNoiseSpectrumMap[sonarID] = spectrum;
     }
 
     LOG_INFOF("Updated environment noise cache for all sonars, spectrum size: %zu",
@@ -579,7 +554,7 @@ void DeviceModel::updatePlatformSelfSoundCache(CSimData* simData)
               selfSound->selfSoundSpectrumList.size());
 
     // 清空旧的平台噪声数据
-    m_multiTargetCache.platformSelfSoundSpectrum.clear();
+    m_multiTargetCache.platformSelfSoundSpectrumMap.clear();
 
     // 处理平台自噪声数据列表
     for (const auto& spectrumStruct : selfSound->selfSoundSpectrumList) {
@@ -599,7 +574,7 @@ void DeviceModel::updatePlatformSelfSoundCache(CSimData* simData)
         }
 
         // 存储到对应声纳的缓存中
-        m_multiTargetCache.platformSelfSoundSpectrum[sonarID] = spectrum;
+        m_multiTargetCache.platformSelfSoundSpectrumMap[sonarID] = spectrum;
 
         LOG_INFOF("Updated platform self sound cache for sonar %d", sonarID);
     }
@@ -665,42 +640,42 @@ void DeviceModel::performMultiTargetSonarEquationCalculation()
         LOG_INFOF("Sonar %d completed calculation for %zu targets", sonarID, sonarResults.size());
     }
 }
-double DeviceModel::calculateTargetSonarEquation(int sonarID, const TargetData& targetData)
+double DeviceModel::calculateTargetSonarEquation(int sonarID, const TargetData& targetCachePropagatedSpectrum)
 {
-    LOG_INFOF("=== Calculating equation for sonar %d, target %d ===", sonarID, targetData.targetId);
+    LOG_INFOF("=== Calculating equation for sonar %d, target %d ===", sonarID, targetCachePropagatedSpectrum.targetId);
 
     // 检查目标数据有效性
-    if (!targetData.isValid || targetData.propagatedSpectrum.empty()) {
+    if (!targetCachePropagatedSpectrum.isValid || targetCachePropagatedSpectrum.propagatedSpectrum.empty()) {
         LOG_WARNF("Invalid target data for sonar %d, target %d - isValid:%d, spectrumSize:%zu",
-                  sonarID, targetData.targetId, targetData.isValid, targetData.propagatedSpectrum.size());
+                  sonarID, targetCachePropagatedSpectrum.targetId, targetCachePropagatedSpectrum.isValid, targetCachePropagatedSpectrum.propagatedSpectrum.size());
         return 0.0;
     }
 
     // 检查平台自噪声和环境噪声数据
-    auto platformIt = m_multiTargetCache.platformSelfSoundSpectrum.find(sonarID);
-    auto environmentIt = m_multiTargetCache.environmentNoiseSpectrum.find(sonarID);
+    auto targetCachePlatformSpectrumVector = m_multiTargetCache.platformSelfSoundSpectrumMap.find(sonarID);
+    auto targetCacheEnvironmentSpectrumVector = m_multiTargetCache.environmentNoiseSpectrumMap.find(sonarID);
 
-    if (platformIt == m_multiTargetCache.platformSelfSoundSpectrum.end()) {
+    if (targetCachePlatformSpectrumVector == m_multiTargetCache.platformSelfSoundSpectrumMap.end()) {
         LOG_WARNF("Missing platform noise data for sonar %d", sonarID);
         return 0.0;
     }
 
-    if (environmentIt == m_multiTargetCache.environmentNoiseSpectrum.end()) {
+    if (targetCacheEnvironmentSpectrumVector == m_multiTargetCache.environmentNoiseSpectrumMap.end()) {
         LOG_WARNF("Missing environment noise data for sonar %d", sonarID);
         return 0.0;
     }
 
     LOG_INFOF("Sonar %d data check passed - platform spectrum size:%zu, environment spectrum size:%zu, target spectrum size:%zu",
-              sonarID, platformIt->second.size(), environmentIt->second.size(), targetData.propagatedSpectrum.size());
+              sonarID, targetCachePlatformSpectrumVector->second.size(), targetCacheEnvironmentSpectrumVector->second.size(), targetCachePropagatedSpectrum.propagatedSpectrum.size());
 
 
 
 
 
     // ############# 步骤1：计算频谱累加求和 #############
-    double propagatedSum = calculateSpectrumSum(targetData.propagatedSpectrum);     // |阵元谱级|
-    double platformSum = calculateSpectrumSum(platformIt->second);                  // |平台背景|
-    double environmentSum = calculateSpectrumSum(environmentIt->second);            // |海洋噪声|
+    double propagatedSum = calculateSpectrumSum(targetCachePropagatedSpectrum.propagatedSpectrum);     // |阵元谱级|
+    double platformSum = calculateSpectrumSum(targetCachePlatformSpectrumVector->second);                  // |平台背景|
+    double environmentSum = calculateSpectrumSum(targetCacheEnvironmentSpectrumVector->second);            // |海洋噪声|
 
     LOG_INFOF("Spectrum sums >>>>>> propagated:%.2f, platform:%.2f, environment:%.2f",
                  propagatedSum, platformSum, environmentSum);
@@ -720,7 +695,7 @@ double DeviceModel::calculateTargetSonarEquation(int sonarID, const TargetData& 
 
     } else {
         LOG_WARNF("Invalid spectrum data for sonar %d target %d >>>>>> propagated=%.2f, platform=%.2f, environment=%.2f",
-                  sonarID, targetData.targetId, propagatedSum, platformSum, environmentSum);
+                  sonarID, targetCachePropagatedSpectrum.targetId, propagatedSum, platformSum, environmentSum);
         return 0.0;
     }
 
@@ -734,7 +709,7 @@ double DeviceModel::calculateTargetSonarEquation(int sonarID, const TargetData& 
     double threshold = getEffectiveThreshold(sonarID);
 
     LOG_DEBUGF("声纳%d目标%d方程计算: X=%.2f, 阈值=%.2f, 可探测=%s",
-               sonarID, targetData.targetId, result, threshold,
+               sonarID, targetCachePropagatedSpectrum.targetId, result, threshold,
                (result > threshold) ? "是" : "否");
 
     return result;
@@ -1061,4 +1036,10 @@ void DeviceModel::loadThresholdConfig(const std::string& filename)
     } catch (const std::exception& e) {
         LOG_ERRORF("加载阈值配置时出错: %s，使用默认值", e.what());
     }
+}
+
+
+DeviceModel::~DeviceModel()
+{
+    LOG_INFO("Sonar model destroyed");
 }
