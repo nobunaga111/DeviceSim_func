@@ -111,7 +111,6 @@ void SeaChartWidget::initializeSonarRanges()
 {
     m_sonarRanges.clear(); // 先清空，避免重复添加
 
-    // 确保只创建4个声纳范围（ID 0-3）
     struct SonarDefinition {
         int id;
         QString name;
@@ -125,10 +124,16 @@ void SeaChartWidget::initializeSonarRanges()
     QVector<SonarDefinition> sonarDefinitions = {
         // 艏端声纳
         {0, "艏端声纳", -45.0f, 45.0f, 30000.0f, QColor(0, 255, 0, 100), true},
-        // 舷侧声纳
-        {1, "舷侧声纳", 45.0f, 135.0f, 25000.0f, QColor(0, 0, 255, 80), true},
+
+        // 舷侧声纳 - 右舷部分
+        {1, "舷侧声纳(右舷)", 45.0f, 135.0f, 25000.0f, QColor(0, 0, 255, 80), true},
+
+        // 舷侧声纳 - 左舷部分
+        {1, "舷侧声纳(左舷)", -135.0f, -45.0f, 25000.0f, QColor(0, 0, 255, 80), true},
+
         // 粗拖声纳
         {2, "粗拖声纳", 135.0f, 225.0f, 35000.0f, QColor(255, 255, 0, 100), true},
+
         // 细拖声纳
         {3, "细拖声纳", 120.0f, 240.0f, 40000.0f, QColor(255, 0, 255, 100), true}
     };
@@ -146,9 +151,8 @@ void SeaChartWidget::initializeSonarRanges()
         m_sonarRanges.append(range);
     }
 
-    qDebug() << "Initialized" << m_sonarRanges.size() << "sonar ranges with consistent IDs 0-3";
+    qDebug() << "Initialized" << m_sonarRanges.size() << "sonar ranges including bilateral side sonar";
 }
-
 void SeaChartWidget::createContextMenu()
 {
     m_contextMenu = new QMenu(this);
@@ -339,7 +343,7 @@ void SeaChartWidget::removePlatform(int platformId)
 
 void SeaChartWidget::clearAllPlatforms()
 {
-    // 修改清除逻辑，确保本艇不被删除
+    // 清除逻辑，确保本艇不被删除
     ChartPlatform ownShipBackup;
     bool hasOwnShip = false;
 
@@ -487,9 +491,25 @@ void SeaChartWidget::validateSonarRanges()
 {
     bool needUpdate = false;
 
-    // 确保声纳范围数据完整性
-    if (m_sonarRanges.size() != 4) {  // 修改：从5改为4
-        qDebug() << "Warning: Sonar ranges count is" << m_sonarRanges.size() << ", reinitializing";
+    // 检查是否包含所有必要的声纳ID (0, 1, 2, 3)
+    QSet<int> requiredSonarIds = {0, 1, 2, 3};
+    QSet<int> existingSonarIds;
+
+    for (const auto& range : m_sonarRanges) {
+        existingSonarIds.insert(range.sonarId);
+    }
+
+    // 检查是否缺少必要的声纳ID
+    QSet<int> missingSonarIds = requiredSonarIds - existingSonarIds;
+
+    if (!missingSonarIds.isEmpty()) {
+        qDebug() << "Warning: Missing sonar IDs:" << missingSonarIds << ", reinitializing";
+        initializeSonarRanges();
+        needUpdate = true;
+    }
+    // 如果数量合理（4-6个范围都是可接受的）
+    else if (m_sonarRanges.size() < 4 || m_sonarRanges.size() > 6) {
+        qDebug() << "Warning: Unusual sonar ranges count:" << m_sonarRanges.size() << ", reinitializing";
         initializeSonarRanges();
         needUpdate = true;
     }
@@ -504,7 +524,7 @@ void SeaChartWidget::validateSonarRanges()
                 case 1: range.color = QColor(0, 0, 255, 80); break;
                 case 2: range.color = QColor(255, 255, 0, 100); break;
                 case 3: range.color = QColor(255, 0, 255, 100); break;
-                default: range.color = QColor(128, 128, 128, 100); break; // 默认情况
+                default: range.color = QColor(128, 128, 128, 100); break;
             }
             needUpdate = true;
         }
@@ -736,15 +756,12 @@ void SeaChartWidget::drawPlatform(QPainter& painter, const ChartPlatform& platfo
     painter.setFont(font);
 
     QString label;
-    if (platform.isOwnShip) {
-        // 本艇只显示名称，不显示速度
-        label = platform.name;
-    } else {
-        // 目标舰船显示名称和速度，中间加空格
-        label = QString("%1\n %2 节")
-                .arg(platform.name)
-                .arg(platform.speed, 0, 'f', 1);
-    }
+
+    // 目标舰船显示名称和速度，中间加空格
+    label = QString("%1\n %2节")
+            .arg(platform.name)
+            .arg(platform.speed, 0, 'f', 1);
+
 
 
 
@@ -849,15 +866,15 @@ void SeaChartWidget::drawSonarRanges(QPainter& painter)
                        qtSweepAngle * 16);
 
         // *** 调试信息：记录绘制详情 ***
-        qDebug() << QString("Sonar %1: pos=(%2,%3), screen=(%4,%5), start=%6°, end=%7°, radius=%8m")
-                    .arg(range.sonarId)
-                    .arg(ownShipPos.x(), 0, 'f', 6)
-                    .arg(ownShipPos.y(), 0, 'f', 6)
-                    .arg(ownShipScreen.x())
-                    .arg(ownShipScreen.y())
-                    .arg(startAngle, 0, 'f', 1)
-                    .arg(endAngle, 0, 'f', 1)
-                    .arg(radiusPixels * m_chartScale, 0, 'f', 1);
+//        qDebug() << QString("Sonar %1: pos=(%2,%3), screen=(%4,%5), start=%6°, end=%7°, radius=%8m")
+//                    .arg(range.sonarId)
+//                    .arg(ownShipPos.x(), 0, 'f', 6)
+//                    .arg(ownShipPos.y(), 0, 'f', 6)
+//                    .arg(ownShipScreen.x())
+//                    .arg(ownShipScreen.y())
+//                    .arg(startAngle, 0, 'f', 1)
+//                    .arg(endAngle, 0, 'f', 1)
+//                    .arg(radiusPixels * m_chartScale, 0, 'f', 1);
     }
 
     painter.restore();
@@ -2016,7 +2033,8 @@ double SeaChartWidget::getOwnShipHeadingSafe() const
 void SeaChartWidget::updatePlatformMovement()
 {
     for (auto& platform : m_platforms) {
-        if (!platform.isOwnShip && platform.speed > 0) {
+        // 移除 !platform.isOwnShip 条件，让本艇也能移动
+        if (platform.speed > 0) {
             // 根据航向和速度计算新位置
             double speedMs = platform.speed * 0.514444; // 节转米/秒
             double deltaTime = 1.0; // 1秒间隔
@@ -2027,8 +2045,23 @@ void SeaChartWidget::updatePlatformMovement()
             double deltaLat = (distance * cos(headingRad)) / 111320.0;
             double deltaLon = (distance * sin(headingRad)) / 111320.0;
 
+            QPointF oldPosition = platform.position;
             platform.position.setX(platform.position.x() + deltaLon);
             platform.position.setY(platform.position.y() + deltaLat);
+
+            // 如果是本艇移动，需要特殊处理
+            if (platform.isOwnShip) {
+                // 可以选择是否自动调整海图中心跟随本艇
+                // m_chartCenter = platform.position;  // 可选：让海图跟随本艇
+
+                emit platformPositionChanged(platform.id, platform.position);
+
+                m_mainWindow->addLog(QString("本艇自动移动: 从(%1,%2)到(%3,%4)")
+                       .arg(oldPosition.x(), 0, 'f', 6)
+                       .arg(oldPosition.y(), 0, 'f', 6)
+                       .arg(platform.position.x(), 0, 'f', 6)
+                       .arg(platform.position.y(), 0, 'f', 6));
+            }
         }
     }
 

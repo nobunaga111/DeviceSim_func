@@ -52,6 +52,8 @@ public:
      */
     void generateAndSendEnvironmentNoiseData();
 
+    void addLog(const QString& message);
+
 private slots:
     //========== 声纳控制功能 ==========//
     void onSonarSwitchToggled(int sonarID, bool enabled);
@@ -78,7 +80,7 @@ private:
     void initializeTimers();
 
     //========== 辅助函数 ==========//
-    void addLog(const QString& message);
+
     void updateSonarStatusDisplay();
     void sendSonarControlOrder(int sonarID, bool enabled);
 

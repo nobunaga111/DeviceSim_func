@@ -412,8 +412,26 @@ void DeviceModel::updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage)
     LOG_INFOF("Updating multi-target propagated sound cache, sound count: %zu",
               soundListStruct->propagatedContinuousList.size());
 
-    // 为每个声纳清空过期的目标数据
+
+
     int64 currentTime = simMessage->time;
+
+    // 修改：如果接收到空的目标列表，立即清空所有声纳的目标数据
+    if (soundListStruct->propagatedContinuousList.empty()) {
+        LOG_INFO("Received empty target list, clearing all sonar target data");
+
+        for (int sonarID = 0; sonarID < 4; sonarID++) {
+            m_multiTargetCache.sonarTargetsData[sonarID].clear();
+            m_multiTargetCache.multiTargetEquationResults[sonarID].clear();
+        }
+
+        LOG_INFO("All sonar target data cleared");
+        return;
+    }
+
+
+    // 为每个声纳清空过期的目标数据
+
     for (int sonarID = 0; sonarID < 4; sonarID++) {
         auto& targetsData = m_multiTargetCache.sonarTargetsData[sonarID];
 
@@ -764,20 +782,12 @@ bool DeviceModel::isTargetInSonarRange(int sonarID, float targetBearing, float t
     // 获取本艇当前航向
     float ownShipHeading = static_cast<float>(m_platformMotion.rotation);
 
-    // 更详细的调试信息
     LOG_INFOF("=== Sonar Range Check Debug ===");
     LOG_INFOF("SonarID: %d, Target bearing: %.1f°, Target distance: %.1fm",
               sonarID, targetBearing, targetDistance);
     LOG_INFOF("Own ship heading: %.1f°", ownShipHeading);
 
-    // 获取声纳的相对角度范围
-    auto relativeRange = getRelativeSonarAngleRange(sonarID);
-    float relativeStart = relativeRange.first;
-    float relativeEnd = relativeRange.second;
-
-    LOG_INFOF("Sonar %d relative range: [%.1f°, %.1f°]", sonarID, relativeStart, relativeEnd);
-
-    // 改进角度计算逻辑
+    // 计算相对目标方位
     float relativeTargetBearing = targetBearing - ownShipHeading;
 
     // 标准化相对角度到-180~180度范围
@@ -786,35 +796,52 @@ bool DeviceModel::isTargetInSonarRange(int sonarID, float targetBearing, float t
 
     LOG_INFOF("Relative target bearing: %.1f°", relativeTargetBearing);
 
-    // 修复：改进范围检查逻辑
     bool inRange = false;
 
-    // 将声纳范围也标准化到-180~180
-    float normalizedStart = relativeStart;
-    float normalizedEnd = relativeEnd;
+    // 特殊处理舷侧声纳（ID=1）- 覆盖左右两侧
+    if (sonarID == 1) {
+        // 左舷范围：45° to 135°（右前方到右后方）
+        bool inStarboardRange = (relativeTargetBearing >= 45.0f && relativeTargetBearing <= 135.0f);
 
-    while (normalizedStart > 180.0f) normalizedStart -= 360.0f;
-    while (normalizedStart <= -180.0f) normalizedStart += 360.0f;
-    while (normalizedEnd > 180.0f) normalizedEnd -= 360.0f;
-    while (normalizedEnd <= -180.0f) normalizedEnd += 360.0f;
+        // 右舷范围：-135° to -45°（左后方到左前方）
+        bool inPortRange = (relativeTargetBearing >= -135.0f && relativeTargetBearing <= -45.0f);
 
-    if (normalizedStart <= normalizedEnd) {
-        // 正常情况，不跨越±180度边界
-        inRange = (relativeTargetBearing >= normalizedStart && relativeTargetBearing <= normalizedEnd);
-        LOG_INFOF("Normal range check: %.1f° >= %.1f° && %.1f° <= %.1f° = %s",
-                  relativeTargetBearing, normalizedStart, relativeTargetBearing, normalizedEnd,
-                  inRange ? "true" : "false");
-    } else {
-        // 跨越±180度边界的情况（例如从150度到-150度）
-        inRange = (relativeTargetBearing >= normalizedStart || relativeTargetBearing <= normalizedEnd);
-        LOG_INFOF("Cross-boundary range check: %.1f° >= %.1f° || %.1f° <= %.1f° = %s",
-                  relativeTargetBearing, normalizedStart, relativeTargetBearing, normalizedEnd,
-                  inRange ? "true" : "false");
+        inRange = inStarboardRange || inPortRange;
+
+        LOG_INFOF("Sonar %d (舷侧) range check:", sonarID);
+        LOG_INFOF("  Starboard range (45°-135°): %s", inStarboardRange ? "true" : "false");
+        LOG_INFOF("  Port range (-135°--45°): %s", inPortRange ? "true" : "false");
+        LOG_INFOF("  Final result: %s", inRange ? "IN RANGE" : "OUT OF RANGE");
+    }
+    else {
+        // 其他声纳使用原有逻辑
+        auto relativeRange = getRelativeSonarAngleRange(sonarID);
+        float relativeStart = relativeRange.first;
+        float relativeEnd = relativeRange.second;
+
+        LOG_INFOF("Sonar %d relative range: [%.1f°, %.1f°]", sonarID, relativeStart, relativeEnd);
+
+        // 标准化声纳范围角度
+        float normalizedStart = relativeStart;
+        float normalizedEnd = relativeEnd;
+
+        while (normalizedStart > 180.0f) normalizedStart -= 360.0f;
+        while (normalizedStart <= -180.0f) normalizedStart += 360.0f;
+        while (normalizedEnd > 180.0f) normalizedEnd -= 360.0f;
+        while (normalizedEnd <= -180.0f) normalizedEnd += 360.0f;
+
+        if (normalizedStart <= normalizedEnd) {
+            // 正常情况，不跨越±180度边界
+            inRange = (relativeTargetBearing >= normalizedStart && relativeTargetBearing <= normalizedEnd);
+        } else {
+            // 跨越±180度边界的情况
+            inRange = (relativeTargetBearing >= normalizedStart || relativeTargetBearing <= normalizedEnd);
+        }
+
+        LOG_INFOF("Normal range check result: %s", inRange ? "IN RANGE" : "OUT OF RANGE");
     }
 
-    LOG_INFOF("Final result: %s", inRange ? "IN RANGE" : "OUT OF RANGE");
     LOG_INFOF("=== End Debug ===");
-
     return inRange;
 }
 

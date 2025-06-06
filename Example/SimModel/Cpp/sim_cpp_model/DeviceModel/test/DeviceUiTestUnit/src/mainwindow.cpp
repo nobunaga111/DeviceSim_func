@@ -418,6 +418,15 @@ void MainWindow::initializeTimers()
     connect(m_dataGenerationTimer, &QTimer::timeout, this, &MainWindow::onDataGenerationTimer);
     m_dataGenerationTimer->start(5000); // 5秒间隔
 
+    //初始化时同步声纳状态到海图
+    if (m_seaChartWidget) {
+        for (int sonarID = 0; sonarID < 4; sonarID++) {
+            bool enabled = m_sonarEnabledStates.value(sonarID, true);
+            m_seaChartWidget->setSonarRangeVisible(sonarID, enabled);
+        }
+        addLog("已同步声纳状态到海图显示");
+    }
+
     addLog("定时器初始化完成 - 状态更新: 1秒, 数据生成: 5秒");
 }
 
@@ -436,6 +445,12 @@ void MainWindow::onSonarSwitchToggled(int sonarID, bool enabled)
 
     // 发送声纳控制命令
     sendSonarControlOrder(sonarID, enabled);
+
+    // 新增：同步控制海图上的声纳范围显示
+    if (m_seaChartWidget) {
+        m_seaChartWidget->setSonarRangeVisible(sonarID, enabled);
+        addLog(QString("海图上声纳 %1 覆盖范围已%2").arg(sonarID).arg(enabled ? "显示" : "隐藏"));
+    }
 
     // 更新状态显示
     auto& control = m_sonarControls[sonarID];
@@ -465,10 +480,13 @@ void MainWindow::onTargetPlatformsUpdated(const QVector<ChartPlatform>& targetPl
         targetPlatforms.size() > 8 ? "color: red; font-weight: bold;" : "color: green; font-weight: bold;"
     );
 
-    // 生成并发送传播声数据
+    // 无论目标列表是否为空，都发送数据
+    generateAndSendPropagatedSoundData(targetPlatforms);
+
     if (!targetPlatforms.isEmpty()) {
-        generateAndSendPropagatedSoundData(targetPlatforms);
         addLog(QString("已更新 %1 个目标平台的传播声数据").arg(targetPlatforms.size()));
+    } else {
+        addLog("已清空所有目标的传播声数据");
     }
 
     // 更新数据状态
@@ -674,12 +692,12 @@ void MainWindow::sendSonarControlOrder(int sonarID, bool enabled)
 
 void MainWindow::generateAndSendPropagatedSoundData(const QVector<ChartPlatform>& targetPlatforms)
 {
-    if (!m_component || !m_agent || targetPlatforms.isEmpty()) {
+    if (!m_component || !m_agent) {
         return;
     }
 
     try {
-        // 创建传播声数据结构
+        // 即使目标列表为空，也创建并发送数据结构
         CMsg_PropagatedContinuousSoundListStruct continuousSound = createPropagatedSoundData(targetPlatforms);
 
         // 创建消息
@@ -696,8 +714,11 @@ void MainWindow::generateAndSendPropagatedSoundData(const QVector<ChartPlatform>
         // 发送给声纳模型
         m_component->onMessage(&continuousMsg);
 
-        addLog(QString("已生成并发送 %1 个目标的传播声数据").arg(targetPlatforms.size()));
-
+        if (targetPlatforms.isEmpty()) {
+            addLog("已发送空的传播声数据（清空目标）");
+        } else {
+            addLog(QString("已生成并发送 %1 个目标的传播声数据").arg(targetPlatforms.size()));
+        }
 
     } catch(const std::exception& e) {
         addLog(QString("生成传播声数据时出错: %1").arg(e.what()));
@@ -1030,8 +1051,8 @@ void MainWindow::generateAndSendPlatformMotionData()
         double ownShipHeading = m_seaChartWidget->getOwnShipHeading();
         double ownShipSpeed = m_seaChartWidget->getOwnShipSpeed();
 
-        // 创建平台机动数据 - 修复：使用栈分配而不是堆分配
-        CData_Motion motionData; // 修改：不使用new
+        // 创建平台机动数据 - 使用栈分配而不是堆分配
+        CData_Motion motionData; // 不使用new
         motionData.name = nullptr;
         motionData.action = true;
         motionData.isPending = false;
