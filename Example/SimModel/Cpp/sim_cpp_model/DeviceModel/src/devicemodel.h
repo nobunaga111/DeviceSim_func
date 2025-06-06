@@ -287,6 +287,8 @@ private:
 
 
     int64 m_lastPropagatedSoundLogTime = 0;  // 上次打印传播声日志的时间
+    int64 m_lastEnvironmentNoiseLogTime = 0;  // 上次打印环境噪声日志的时间  // 新增
+    int64 m_lastPlatformSelfSoundLogTime = 0; // 上次打印平台自噪声日志的时间  // 新增
     static const int64 PROPAGATED_SOUND_LOG_INTERVAL = 5000; // 5秒打印间隔
 };
 

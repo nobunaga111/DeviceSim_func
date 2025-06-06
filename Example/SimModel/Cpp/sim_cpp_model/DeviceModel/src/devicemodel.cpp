@@ -173,26 +173,47 @@ void DeviceModel::start()
 void DeviceModel::onMessage(CSimMessage* simMessage)
 {
     if (!simMessage || !m_agent) {
-        std::cout << __FUNCTION__ << ":" << __LINE__ << " simMessage or m_agent is null!" << std::endl;
-        return;
-    }
+       std::cout << __FUNCTION__ << ":" << __LINE__ << " simMessage or m_agent is null!" << std::endl;
+       return;
+   }
 
-    // 根据消息主题进行相应处理
-    std::string topic = simMessage->topic;
+   // 根据消息主题进行相应处理
+   std::string topic = simMessage->topic;
 
-    // 对MSG_PropagatedContinuousSound特殊处理，控制打印频率
-    if (topic == MSG_PropagatedContinuousSound) {
-        int64 currentTime = QDateTime::currentMSecsSinceEpoch();
-        if (currentTime - m_lastPropagatedSoundLogTime >= PROPAGATED_SOUND_LOG_INTERVAL) {
-            LOG_INFOF("onMessage!!! Topic: %s", topic.c_str());
-            LOG_INFOF("Received message with topic: %s", topic.c_str());
-            m_lastPropagatedSoundLogTime = currentTime;
-        }
-    } else {
-        // 其他消息正常打印
-        LOG_INFOF("onMessage!!! Topic: %s", topic.c_str());
-        LOG_INFOF("Received message with topic: %s", topic.c_str());
-    }
+   // 对特定消息主题进行5秒间隔日志控制
+   if (topic == MSG_PropagatedContinuousSound ||
+       topic == MSG_EnvironmentNoiseToSonar ||
+       topic == Data_PlatformSelfSound) {
+
+       int64 currentTime = QDateTime::currentMSecsSinceEpoch();
+       bool shouldLog = false;
+
+       if (topic == MSG_PropagatedContinuousSound) {
+           if (currentTime - m_lastPropagatedSoundLogTime >= PROPAGATED_SOUND_LOG_INTERVAL) {
+               m_lastPropagatedSoundLogTime = currentTime;
+               shouldLog = true;
+           }
+       } else if (topic == MSG_EnvironmentNoiseToSonar) {
+           if (currentTime - m_lastEnvironmentNoiseLogTime >= PROPAGATED_SOUND_LOG_INTERVAL) {
+               m_lastEnvironmentNoiseLogTime = currentTime;
+               shouldLog = true;
+           }
+       } else if (topic == Data_PlatformSelfSound) {
+           if (currentTime - m_lastPlatformSelfSoundLogTime >= PROPAGATED_SOUND_LOG_INTERVAL) {
+               m_lastPlatformSelfSoundLogTime = currentTime;
+               shouldLog = true;
+           }
+       }
+
+       if (shouldLog) {
+           LOG_INFOF("==========onMessage!!! Topic: %s", topic.c_str());
+           LOG_INFOF("Received message with topic: %s", topic.c_str());
+       }
+   } else {
+       // 其他消息正常打印
+       LOG_INFOF("==========onMessage!!! Topic: %s", topic.c_str());
+       LOG_INFOF("Received message with topic: %s", topic.c_str());
+   }
 
 
 
@@ -263,7 +284,7 @@ void DeviceModel::updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage)
             m_multiTargetCache.multiTargetEquationResults[sonarID].clear();
         }
 
-        LOG_INFO("All sonar target data cleared");
+//        LOG_INFO("All sonar target data cleared");
         return;
     }
 
