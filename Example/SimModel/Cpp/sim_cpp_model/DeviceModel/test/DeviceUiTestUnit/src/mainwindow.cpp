@@ -5,6 +5,7 @@
 #include <QSplitter>
 #include <QHeaderView>
 #include <QTableWidget>
+#include <SonarConfig.h>
 
 // 静态常量定义
 const QStringList MainWindow::SONAR_NAMES = {
