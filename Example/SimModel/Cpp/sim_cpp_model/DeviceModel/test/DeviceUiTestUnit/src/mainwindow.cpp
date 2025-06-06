@@ -6,6 +6,7 @@
 #include <QHeaderView>
 #include <QTableWidget>
 #include <SonarConfig.h>
+#include <QDebug>
 
 // 静态常量定义
 const QStringList MainWindow::SONAR_NAMES = {
@@ -20,7 +21,6 @@ const QList<QColor> MainWindow::SONAR_COLORS = {
 };
 
 // 构造函数
-// 构造函数应该只有一个完整的实现
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_centralWidget(nullptr)
@@ -58,11 +58,11 @@ MainWindow::MainWindow(QWidget *parent)
     m_sonarRangeConfigs[2] = SonarRangeConfig{2, "粗拖声纳", 35000.0f, 135.0f, 225.0f, 0.0f, 0.0f, false};
     m_sonarRangeConfigs[3] = SonarRangeConfig{3, "细拖声纳", 40000.0f, 120.0f, 240.0f, 0.0f, 0.0f, false};
 
-    // 2 加载扩展配置
-    loadExtendedConfig();
-
-    // 3 初始化界面
+    // 2 *** 初始化界面，确保UI组件都被创建 ***
     initializeUI();
+
+    // 3 *** 加载扩展配置 ***
+    loadExtendedConfig();
 
     // 4 创建声纳模型实例
     m_component = createComponent("sonar");
@@ -617,18 +617,48 @@ void MainWindow::onDataGenerationTimer()
 
 void MainWindow::addLog(const QString& message)
 {
-    if (!m_logTextEdit) return;
+    // 防御性检查：确保UI组件已经初始化
+    if (!m_logTextEdit) {
+        // 如果UI还没初始化，先输出到控制台
+        qDebug() << "[EARLY LOG]:" << message;
 
-    // 获取当前时间
-    QString timestamp = QDateTime::currentDateTime().toString("[hh:mm:ss.zzz] ");
+        // 可以选择将早期的日志保存到队列中，待UI初始化后再显示
+        static QStringList earlyLogs;
+        earlyLogs.append(QString("[%1] %2")
+                        .arg(QDateTime::currentDateTime().toString("hh:mm:ss"))
+                        .arg(message));
 
-    // 带时间戳的日志
-    m_logTextEdit->append(timestamp + message);
+        // 如果队列太长，移除最老的日志
+        if (earlyLogs.size() > 100) {
+            earlyLogs.removeFirst();
+        }
 
-    // 滚动到底部
+        return;
+    }
+
+    // 正常的日志记录逻辑
+    QString timestamp = QDateTime::currentDateTime().toString("hh:mm:ss");
+    QString logEntry = QString("[%1] %2").arg(timestamp).arg(message);
+
+    // 安全地添加到UI
+    m_logTextEdit->append(logEntry);
+
+    // 自动滚动到底部
     QScrollBar* scrollBar = m_logTextEdit->verticalScrollBar();
-    if (scrollBar) {
-        scrollBar->setValue(scrollBar->maximum());
+    scrollBar->setValue(scrollBar->maximum());
+
+    // 可选：同时输出到控制台
+    qDebug() << logEntry;
+
+    // 如果有早期日志队列，第一次正常记录时将它们都显示出来
+    static bool hasDisplayedEarlyLogs = false;
+    if (!hasDisplayedEarlyLogs) {
+        static QStringList earlyLogs;
+        for (const QString& earlyLog : earlyLogs) {
+            m_logTextEdit->append(earlyLog);
+        }
+        earlyLogs.clear();
+        hasDisplayedEarlyLogs = true;
     }
 }
 
