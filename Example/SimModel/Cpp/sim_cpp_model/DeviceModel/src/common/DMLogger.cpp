@@ -170,9 +170,9 @@ void Logger::writeLog(LogLevel level, const char* function, int line, const std:
     if (m_fileOutputEnabled && m_enableFile && m_logFile.is_open()) {
         m_logFile << logLine << std::endl;
         m_logFile.flush();
-        std::cout << "DEBUG: Log written to file" << std::endl;
+//        std::cout << "DEBUG: Log written to file" << std::endl;
     } else {
-        std::cout << "DEBUG: Log NOT written to file" << std::endl;
+//        std::cout << "DEBUG: Log NOT written to file" << std::endl;
     }
 }
 
