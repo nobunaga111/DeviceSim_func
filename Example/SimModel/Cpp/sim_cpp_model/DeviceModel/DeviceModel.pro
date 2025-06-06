@@ -34,6 +34,7 @@ SOURCES += \
 HEADERS += \
     src/CreateDeviceModel.h \
     src/DeviceTestInOut.h \
+    src/SonarConfig.h \
     src/common/define.h \
     src/devicemodel.h \
     src/common/DMLogger.h

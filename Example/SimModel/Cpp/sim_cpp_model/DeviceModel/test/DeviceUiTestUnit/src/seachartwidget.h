@@ -28,6 +28,7 @@
 #include <QFile>
 #include <QPixmap>
 #include <cmath>
+#include "mainwindow.h"
 
 // 前向声明
 class MainWindow;
@@ -283,6 +284,26 @@ public:
     QPoint geoToScreen(const QPointF& geoPos) const;
 
 
+
+    /**
+     * @brief 从配置初始化声纳探测范围
+     * @param rangeConfigs 声纳范围配置映射
+     */
+    void initializeSonarRangesFromConfig(const QMap<int, MainWindow::SonarRangeConfig>& rangeConfigs);
+
+    /**
+     * @brief 更新单个声纳的最大探测距离
+     * @param sonarId 声纳ID
+     * @param maxRange 最大探测距离（米）
+     */
+    void updateSonarMaxRange(int sonarId, float maxRange);
+
+    /**
+     * @brief 批量更新声纳最大探测距离
+     * @param rangeConfigs 声纳范围配置映射
+     */
+    void updateSonarMaxRanges(const QMap<int, MainWindow::SonarRangeConfig>& rangeConfigs);
+
 signals:
     /**
      * @brief 平台位置改变信号
@@ -422,6 +443,20 @@ private:
      */
     double getOwnShipHeadingSafe() const;
 
+
+    /**
+     * @brief 根据配置创建声纳探测范围定义
+     * @param config 声纳范围配置
+     * @return 声纳探测范围列表
+     */
+    QVector<SonarDetectionRange> createSonarRangesFromConfig(const MainWindow::SonarRangeConfig& config);
+
+    /**
+     * @brief 根据声纳ID获取对应的颜色
+     * @param sonarId 声纳ID
+     * @return 声纳颜色
+     */
+    QColor getSonarColor(int sonarId) const;
 
 private:
     MainWindow* m_mainWindow;                       // 主窗口引用

@@ -36,8 +36,9 @@ SeaChartWidget::SeaChartWidget(QWidget *parent)
     // 初始化本艇
     initializeOwnShip();
 
-    // 初始化声纳探测范围
+    // 初始化声纳探测范围（默认值，稍后可能被配置覆盖）
     initializeSonarRanges();
+
 
     // 创建右键菜单
     createContextMenu();
@@ -109,6 +110,7 @@ void SeaChartWidget::initializeOwnShip()
 
 void SeaChartWidget::initializeSonarRanges()
 {
+    // 注意：这是默认的声纳范围初始化，实际使用时会被配置文件中的设置覆盖
     m_sonarRanges.clear(); // 先清空，避免重复添加
 
     struct SonarDefinition {
@@ -151,7 +153,7 @@ void SeaChartWidget::initializeSonarRanges()
         m_sonarRanges.append(range);
     }
 
-    qDebug() << "Initialized" << m_sonarRanges.size() << "sonar ranges including bilateral side sonar";
+    qDebug() << "Initialized" << m_sonarRanges.size() << "default sonar ranges";
 }
 void SeaChartWidget::createContextMenu()
 {
@@ -464,6 +466,11 @@ bool SeaChartWidget::isOwnShipValid() const
 void SeaChartWidget::setSonarDetectionRanges(const QVector<SonarDetectionRange>& ranges)
 {
     m_sonarRanges = ranges;
+
+    // 验证并修复声纳范围状态
+    validateSonarRanges();
+
+    qDebug() << "Set" << ranges.size() << "sonar detection ranges";
     update();
 }
 
@@ -2066,4 +2073,127 @@ void SeaChartWidget::updatePlatformMovement()
 
     emit targetPlatformsUpdated(getTargetPlatforms());
     update();
+}
+
+
+
+
+// 从配置初始化声纳探测范围
+void SeaChartWidget::initializeSonarRangesFromConfig(const QMap<int, MainWindow::SonarRangeConfig>& rangeConfigs)
+{
+    m_sonarRanges.clear(); // 先清空，避免重复添加
+
+    for (auto it = rangeConfigs.begin(); it != rangeConfigs.end(); ++it) {
+        int sonarID = it.key();
+        const MainWindow::SonarRangeConfig& config = it.value();
+
+        QVector<SonarDetectionRange> ranges = createSonarRangesFromConfig(config);
+        for (const auto& range : ranges) {
+            m_sonarRanges.append(range);
+        }
+    }
+
+    qDebug() << "Initialized" << m_sonarRanges.size() << "sonar ranges from config";
+}
+
+// 根据配置创建声纳探测范围定义
+QVector<SonarDetectionRange> SeaChartWidget::createSonarRangesFromConfig(const MainWindow::SonarRangeConfig& config)
+{
+    QVector<SonarDetectionRange> ranges;
+
+    if (config.hasTwoSegments) {
+        // 有两个分段的声纳（如舷侧声纳）
+        SonarDetectionRange range1;
+        range1.sonarId = config.sonarId;
+        range1.sonarName = config.name + "(第一段)";
+        range1.startAngle = config.startAngle1;
+        range1.endAngle = config.endAngle1;
+        range1.maxRange = config.maxRange;
+        range1.color = getSonarColor(config.sonarId);
+        range1.isVisible = true;
+        ranges.append(range1);
+
+        SonarDetectionRange range2;
+        range2.sonarId = config.sonarId;
+        range2.sonarName = config.name + "(第二段)";
+        range2.startAngle = config.startAngle2;
+        range2.endAngle = config.endAngle2;
+        range2.maxRange = config.maxRange;
+        range2.color = getSonarColor(config.sonarId);
+        range2.isVisible = true;
+        ranges.append(range2);
+    } else {
+        // 只有一个分段的声纳
+        SonarDetectionRange range;
+        range.sonarId = config.sonarId;
+        range.sonarName = config.name;
+        range.startAngle = config.startAngle1;
+        range.endAngle = config.endAngle1;
+        range.maxRange = config.maxRange;
+        range.color = getSonarColor(config.sonarId);
+        range.isVisible = true;
+        ranges.append(range);
+    }
+
+    return ranges;
+}
+
+// 获取声纳颜色的辅助方法
+QColor SeaChartWidget::getSonarColor(int sonarId) const
+{
+    // 根据声纳ID返回对应的颜色
+    switch (sonarId) {
+        case 0: return QColor(0, 255, 0, 100);      // 艏端声纳 - 绿色
+        case 1: return QColor(0, 0, 255, 80);       // 舷侧声纳 - 蓝色
+        case 2: return QColor(255, 255, 0, 100);    // 粗拖声纳 - 黄色
+        case 3: return QColor(255, 0, 255, 100);    // 细拖声纳 - 洋红色
+        default: return QColor(128, 128, 128, 100); // 默认颜色 - 灰色
+    }
+}
+
+// 更新单个声纳的最大探测距离
+void SeaChartWidget::updateSonarMaxRange(int sonarId, float maxRange)
+{
+    bool updated = false;
+
+    // 更新所有匹配的声纳范围
+    for (auto& range : m_sonarRanges) {
+        if (range.sonarId == sonarId) {
+            range.maxRange = maxRange;
+            updated = true;
+        }
+    }
+
+    if (updated) {
+        qDebug() << "Updated sonar" << sonarId << "max range to:" << maxRange << "meters";
+        update(); // 触发重绘
+    } else {
+        qDebug() << "Warning: Sonar" << sonarId << "not found for range update";
+    }
+}
+
+// 批量更新声纳最大探测距离
+void SeaChartWidget::updateSonarMaxRanges(const QMap<int, MainWindow::SonarRangeConfig>& rangeConfigs)
+{
+    bool anyUpdated = false;
+
+    for (auto it = rangeConfigs.begin(); it != rangeConfigs.end(); ++it) {
+        int sonarId = it.key();
+        float maxRange = it.value().maxRange;
+
+        // 更新所有匹配的声纳范围
+        for (auto& range : m_sonarRanges) {
+            if (range.sonarId == sonarId) {
+                if (range.maxRange != maxRange) {
+                    range.maxRange = maxRange;
+                    anyUpdated = true;
+                }
+            }
+        }
+    }
+
+    if (anyUpdated) {
+        qDebug() << "Batch updated sonar max ranges";
+        update(); // 触发重绘
+    }
 }

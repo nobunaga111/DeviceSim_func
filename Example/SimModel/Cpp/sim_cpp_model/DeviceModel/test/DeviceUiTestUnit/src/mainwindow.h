@@ -20,6 +20,7 @@
 #include <QLCDNumber>
 #include <QCheckBox>
 #include <QFrame>
+#include <QDoubleSpinBox>
 
 #include "CreateDeviceModel.h"
 #include "CSimComponentBase.h"
@@ -54,6 +55,25 @@ public:
 
     void addLog(const QString& message);
 
+    /**
+     * @brief 声纳范围配置结构体
+     */
+    struct SonarRangeConfig {
+        int sonarId;
+        QString name;
+        float maxRange;           // 最大探测距离（米）
+        float startAngle1;        // 第一段起始角度
+        float endAngle1;          // 第一段结束角度
+        float startAngle2;        // 第二段起始角度（仅舷侧声纳使用）
+        float endAngle2;          // 第二段结束角度（仅舷侧声纳使用）
+        bool hasTwoSegments;      // 是否有两个角度段
+
+        SonarRangeConfig() : sonarId(-1), maxRange(30000.0f),
+                           startAngle1(0.0f), endAngle1(0.0f),
+                           startAngle2(0.0f), endAngle2(0.0f),
+                           hasTwoSegments(false) {}
+    };
+
 private slots:
     //========== 声纳控制功能 ==========//
     void onSonarSwitchToggled(int sonarID, bool enabled);
@@ -76,6 +96,11 @@ private slots:
     void onLoadThresholdConfig();
     void onResetThreshold();
 
+    //========== 声纳范围配置功能 ==========//
+    void onSonarRangeChanged(int sonarID, double value);
+    void onSaveRangeConfig();
+    void onResetRangeConfig();
+
 private:
     //========== UI初始化函数 ==========//
     void initializeUI();
@@ -87,7 +112,6 @@ private:
     void initializeTimers();
 
     //========== 辅助函数 ==========//
-
     void updateSonarStatusDisplay();
     void sendSonarControlOrder(int sonarID, bool enabled);
 
@@ -109,6 +133,15 @@ private:
     void createThresholdConfigPanel();
     void updateThresholdDisplay();
     void syncThresholdFromModel();
+
+    //========== 声纳范围配置辅助函数 ==========//
+    void createSonarRangeConfigPanel();
+    void updateSonarRangeDisplay();
+    void syncSonarRangeToChart();
+
+    //========== 配置文件操作 ==========//
+    void loadExtendedConfig();
+    void saveExtendedConfig();
 
 private:
     //========== 主要布局组件 ==========//
@@ -173,10 +206,8 @@ private:
     static const QStringList SONAR_NAMES;          // 声纳名称列表
     static const QList<QColor> SONAR_COLORS;       // 声纳颜色列表
 
-
     //========== 阈值设置面板 ==========//
     QGroupBox* m_thresholdConfigGroup;              // 阈值配置组
-
 
     struct SonarThresholdWidget {
         QLabel* nameLabel;                          // 声纳名称标签
@@ -190,12 +221,24 @@ private:
     QPushButton* m_loadThresholdConfigButton;       // 加载配置按钮
     QPushButton* m_resetThresholdButton;            // 重置阈值按钮
 
+    //========== 声纳范围配置面板 ==========//
+    QGroupBox* m_sonarRangeConfigGroup;             // 声纳范围配置组
 
+    struct SonarRangeWidget {
+        QLabel* nameLabel;                          // 声纳名称标签
+        QDoubleSpinBox* rangeSpinBox;              // 最大距离输入框
+        QLabel* statusLabel;                        // 状态标签
+    };
 
-    //
-    bool m_fileLogEnabled = true;  // 文件日志是否启用
+    QMap<int, SonarRangeWidget> m_rangeControls;    // 范围控制组件映射表
+    QPushButton* m_saveRangeConfigButton;           // 保存范围配置按钮
+    QPushButton* m_resetRangeConfigButton;          // 重置范围配置按钮
 
-    QVBoxLayout* m_controlPanelLayout;  // 控制面板布局
+    //========== 声纳范围配置数据 ==========//
+    QMap<int, SonarRangeConfig> m_sonarRangeConfigs; // 声纳范围配置
+
+    bool m_fileLogEnabled = true;                   // 文件日志是否启用
+    QVBoxLayout* m_controlPanelLayout;              // 控制面板布局
 };
 
 #endif // MAINWINDOW_H

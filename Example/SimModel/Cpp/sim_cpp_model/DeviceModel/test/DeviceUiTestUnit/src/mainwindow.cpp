@@ -77,14 +77,48 @@ MainWindow::MainWindow(QWidget *parent)
 
 
 
-    // 同步阈值设置（在模型初始化之后）
-    if (m_component) {
-        QTimer::singleShot(100, this, [this]() {
-            syncThresholdFromModel();
-            addLog("阈值配置界面已同步");
-        });
-    }
-}
+
+    //  1. 首先初始化声纳范围配置的默认值
+     m_sonarRangeConfigs[0] = SonarRangeConfig{0, "艏端声纳", 30000.0f, -45.0f, 45.0f, 0.0f, 0.0f, false};
+     m_sonarRangeConfigs[1] = SonarRangeConfig{1, "舷侧声纳", 25000.0f, 45.0f, 135.0f, -135.0f, -45.0f, true};
+     m_sonarRangeConfigs[2] = SonarRangeConfig{2, "粗拖声纳", 35000.0f, 135.0f, 225.0f, 0.0f, 0.0f, false};
+     m_sonarRangeConfigs[3] = SonarRangeConfig{3, "细拖声纳", 40000.0f, 120.0f, 240.0f, 0.0f, 0.0f, false};
+
+     // 2. 加载扩展配置（在模型初始化之前）
+     loadExtendedConfig();
+
+     // 3. 初始化界面
+     initializeUI();
+
+     // 4. 创建声纳模型实例和agent
+     m_component = createComponent("sonar");
+     m_agent = new DeviceModelAgent();
+
+     // 5. 初始化声纳模型
+     if (m_component && m_agent) {
+         m_component->init(m_agent, nullptr);
+         m_component->start();
+         addLog("多目标声纳模型初始化完成");
+     }
+
+     // 6. 初始化定时器
+     initializeTimers();
+
+     // 7. 发送基础数据
+     generateAndSendEnvironmentNoiseData();
+     generateAndSendPlatformSelfSoundData();
+
+     // 8. 同步配置到界面和海图（在模型初始化之后）
+     if (m_component) {
+         QTimer::singleShot(100, this, [this]() {
+             syncThresholdFromModel();
+             syncSonarRangeToChart();
+             addLog("阈值和范围配置界面已同步");
+         });
+     }
+
+     addLog("多目标声纳系统导调平台启动完成");
+ }
 
 // 析构函数
 MainWindow::~MainWindow()
@@ -195,7 +229,9 @@ void MainWindow::createControlPanel()
 void MainWindow::createSonarStatusPanel()
 {
     // 获取已创建的控制面板布局
-    QVBoxLayout* controlLayout = qobject_cast<QVBoxLayout*>(m_controlPanel->layout());
+//    QVBoxLayout* controlLayout = qobject_cast<QVBoxLayout*>(m_controlPanel->layout());
+    QVBoxLayout* controlLayout = m_controlPanelLayout;
+
 
     // 如果布局不存在，创建一个
     if (!controlLayout) {
@@ -235,7 +271,7 @@ void MainWindow::createSonarStatusPanel()
     // === 声纳状态控制组 - 改为两列布局 ===
     m_sonarStatusGroup = new QGroupBox("声纳阵列状态与控制");
     m_sonarStatusGroup->setStyleSheet(
-        "QGroupBox { font-weight: bold; font-size: 12px; }"
+        "QGroupBox { font-weight: bold; font-size: 14px; }"
         "QGroupBox::title { subcontrol-origin: margin; padding: 0 5px; }"
     );
 
@@ -312,7 +348,7 @@ void MainWindow::createSonarStatusPanel()
 
     // === 系统状态组 ===
     m_systemStatusGroup = new QGroupBox("系统状态信息");
-    m_systemStatusGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 12px; }");
+    m_systemStatusGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; }");
     m_systemStatusGroup->setMinimumWidth(350); // 设置最小宽度
 
     QGridLayout* systemLayout = new QGridLayout(m_systemStatusGroup);
@@ -345,7 +381,7 @@ void MainWindow::createSonarStatusPanel()
 
     // === 声纳方程结果组 ===
     m_equationResultsGroup = new QGroupBox("声纳方程计算结果");
-    m_equationResultsGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 12px; }");
+    m_equationResultsGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; }");
     m_equationResultsGroup->setMinimumWidth(400); // 设置最小宽度
 
     QVBoxLayout* resultsLayout = new QVBoxLayout(m_equationResultsGroup);
@@ -369,7 +405,7 @@ void MainWindow::createSonarStatusPanel()
     m_equationResultsDisplay->setMaximumHeight(180); // 稍微减小高度
     m_equationResultsDisplay->setReadOnly(true);
     m_equationResultsDisplay->setStyleSheet(
-        "QTextEdit { font-family: monospace; font-size: 10px; background-color: #f0f0f0; }"
+        "QTextEdit { font-family: monospace; font-size: 12px; background-color: #f0f0f0; }"
     );
     m_equationResultsDisplay->setPlainText("等待目标数据和声纳方程计算...\n点击\"刷新结果\"查看最新计算结果。");
 
@@ -383,6 +419,10 @@ void MainWindow::createSonarStatusPanel()
     // 阈值配置面板（controlLayout在此作用域内有效）
     createThresholdConfigPanel();
     controlLayout->addWidget(m_thresholdConfigGroup);
+
+    // 声纳范围配置面板
+    createSonarRangeConfigPanel();
+    controlLayout->addWidget(m_sonarRangeConfigGroup);
 
     // 弹性空间
     controlLayout->addStretch(1);
@@ -399,8 +439,7 @@ void MainWindow::createLogPanel()
 
     // 日志标题
     QLabel* logTitle = new QLabel("系统日志");
-//    logTitle->setStyleSheet("font-weight: bold; font-size: 14px; color: darkblue;");
-    logTitle->setStyleSheet("font-weight: bold; font-size: 16px; color: darkblue;");
+    logTitle->setStyleSheet("font-weight: bold; font-size: 18px; color: darkblue;");
     logLayout->addWidget(logTitle);
 
     // 创建日志文本编辑框
@@ -408,7 +447,7 @@ void MainWindow::createLogPanel()
     m_logTextEdit->setReadOnly(true);
     m_logTextEdit->setMinimumHeight(150);
     m_logTextEdit->setStyleSheet(
-        "QTextEdit { font-family: Consolas, monospace; font-size: 12px; "
+        "QTextEdit { font-family: Consolas, monospace; font-size: 14px; "
         "background-color: #1e1e1e; color: #ffffff; }"
     );
 
@@ -1324,6 +1363,25 @@ void MainWindow::onResetThreshold()
     }
 }
 
+// 声纳范围配置槽函数实现
+void MainWindow::onSonarRangeChanged(int sonarID, double value)
+{
+    if (sonarID >= 0 && sonarID < 4) {
+        m_sonarRangeConfigs[sonarID].maxRange = static_cast<float>(value);
+        updateSonarRangeDisplay();
+        syncSonarRangeToChart();
+        addLog(QString("设置%1最大显示距离: %2 米")
+               .arg(SONAR_NAMES[sonarID])
+               .arg(value, 0, 'f', 0));
+    }
+}
+
+void MainWindow::onSaveRangeConfig()
+{
+    saveExtendedConfig();
+    addLog("声纳范围配置已保存到 threshold_config.ini");
+}
+
 void MainWindow::updateThresholdDisplay()
 {
     if (!m_component) return;
@@ -1336,8 +1394,9 @@ void MainWindow::updateThresholdDisplay()
         auto& thresholdWidget = m_thresholdControls[sonarID];
         double currentThreshold = deviceModel->getSonarDetectionThreshold(sonarID);
 
+        // 调整字体大小
         thresholdWidget.statusLabel->setText(QString("当前: %1").arg(currentThreshold, 0, 'f', 2));
-        thresholdWidget.statusLabel->setStyleSheet("color: blue; font-size: 10px;");
+        thresholdWidget.statusLabel->setStyleSheet("color: blue; font-size: 12px;");
     }
 }
 
@@ -1357,4 +1416,250 @@ void MainWindow::syncThresholdFromModel()
     }
 
     updateThresholdDisplay();
+}
+
+
+// 创建声纳范围配置面板
+void MainWindow::createSonarRangeConfigPanel()
+{
+    // === 声纳范围配置组 ===
+    m_sonarRangeConfigGroup = new QGroupBox("声纳最大探测距离配置");
+    m_sonarRangeConfigGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; }"); // 字体大小从12px改为14px
+
+    QVBoxLayout* rangeLayout = new QVBoxLayout(m_sonarRangeConfigGroup);
+
+    QLabel* rangeLabel = new QLabel("声纳覆盖显示距离:");
+    rangeLabel->setStyleSheet("font-weight: bold; color: purple; font-size: 14px;");
+    rangeLayout->addWidget(rangeLabel);
+
+    // 声纳范围设置 - 2行2列布局
+    QGridLayout* sonarRangeLayout = new QGridLayout();
+
+    for (int sonarID = 0; sonarID < 4; sonarID++) {
+        SonarRangeWidget rangeWidget;
+
+        // 计算网格位置：2列排列
+        int row = sonarID / 2;    // 行号：0,0,1,1
+        int col = sonarID % 2;    // 列号：0,1,0,1
+
+        // 为每个声纳创建一个容器框架
+        QFrame* rangeFrame = new QFrame();
+        rangeFrame->setFrameStyle(QFrame::Box);
+        rangeFrame->setStyleSheet("QFrame { border: 1px solid lightgray; border-radius: 3px; padding: 5px; }");
+
+        QVBoxLayout* frameLayout = new QVBoxLayout(rangeFrame);
+        frameLayout->setSpacing(5);
+
+        // 声纳名称标签
+        rangeWidget.nameLabel = new QLabel(SONAR_NAMES[sonarID]);
+        rangeWidget.nameLabel->setStyleSheet("color: " + SONAR_COLORS[sonarID].name() + "; font-weight: bold; font-size: 14px;");
+        frameLayout->addWidget(rangeWidget.nameLabel);
+
+        // 最大距离输入框
+        QHBoxLayout* inputLayout = new QHBoxLayout();
+        inputLayout->addWidget(new QLabel("最大距离:"));
+
+        rangeWidget.rangeSpinBox = new QDoubleSpinBox();
+        rangeWidget.rangeSpinBox->setRange(1000.0, 100000.0);  // 1km到100km
+        rangeWidget.rangeSpinBox->setSingleStep(1000.0);
+        rangeWidget.rangeSpinBox->setDecimals(0);
+        rangeWidget.rangeSpinBox->setValue(m_sonarRangeConfigs[sonarID].maxRange);
+        rangeWidget.rangeSpinBox->setSuffix(" 米");
+
+        // 连接信号
+        connect(rangeWidget.rangeSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+                [this, sonarID](double value) { onSonarRangeChanged(sonarID, value); });
+
+        inputLayout->addWidget(rangeWidget.rangeSpinBox);
+        frameLayout->addLayout(inputLayout);
+
+        // 状态标签
+        rangeWidget.statusLabel = new QLabel(QString("当前: %1m").arg(m_sonarRangeConfigs[sonarID].maxRange, 0, 'f', 0));
+        rangeWidget.statusLabel->setStyleSheet("color: blue; font-size: 12px;");
+        frameLayout->addWidget(rangeWidget.statusLabel);
+
+        sonarRangeLayout->addWidget(rangeFrame, row, col);
+        m_rangeControls[sonarID] = rangeWidget;
+    }
+
+    rangeLayout->addLayout(sonarRangeLayout);
+
+    // 控制按钮
+    QHBoxLayout* rangeButtonLayout = new QHBoxLayout();
+
+    m_saveRangeConfigButton = new QPushButton("保存范围配置");
+    m_saveRangeConfigButton->setStyleSheet("background-color: lightgreen;");
+    connect(m_saveRangeConfigButton, &QPushButton::clicked,
+            this, &MainWindow::onSaveRangeConfig);
+    rangeButtonLayout->addWidget(m_saveRangeConfigButton);
+
+    m_resetRangeConfigButton = new QPushButton("重置默认范围");
+    m_resetRangeConfigButton->setStyleSheet("background-color: orange;");
+    connect(m_resetRangeConfigButton, &QPushButton::clicked,
+            this, &MainWindow::onResetRangeConfig);
+    rangeButtonLayout->addWidget(m_resetRangeConfigButton);
+
+    rangeLayout->addLayout(rangeButtonLayout);
+}
+
+
+void MainWindow::onResetRangeConfig()
+{
+    // 重置为默认值
+    m_sonarRangeConfigs[0].maxRange = 30000.0f;
+    m_sonarRangeConfigs[1].maxRange = 25000.0f;
+    m_sonarRangeConfigs[2].maxRange = 35000.0f;
+    m_sonarRangeConfigs[3].maxRange = 40000.0f;
+
+    // 更新界面
+    for (int sonarID = 0; sonarID < 4; sonarID++) {
+        auto& rangeWidget = m_rangeControls[sonarID];
+        rangeWidget.rangeSpinBox->blockSignals(true);
+        rangeWidget.rangeSpinBox->setValue(m_sonarRangeConfigs[sonarID].maxRange);
+        rangeWidget.rangeSpinBox->blockSignals(false);
+    }
+
+    updateSonarRangeDisplay();
+    syncSonarRangeToChart();
+    addLog("声纳范围配置已重置为默认值");
+}
+
+void MainWindow::updateSonarRangeDisplay()
+{
+    for (int sonarID = 0; sonarID < 4; sonarID++) {
+        auto& rangeWidget = m_rangeControls[sonarID];
+        rangeWidget.statusLabel->setText(QString("当前: %1m").arg(m_sonarRangeConfigs[sonarID].maxRange, 0, 'f', 0));
+    }
+}
+
+void MainWindow::syncSonarRangeToChart()
+{
+    if (m_seaChartWidget) {
+        // 将配置的范围同步到海图显示
+        QVector<SonarDetectionRange> ranges;
+
+        for (int sonarID = 0; sonarID < 4; sonarID++) {
+            const auto& config = m_sonarRangeConfigs[sonarID];
+
+            if (sonarID == 1 && config.hasTwoSegments) {
+                // 舷侧声纳有两个分段
+                SonarDetectionRange range1;
+                range1.sonarId = sonarID;
+                range1.sonarName = config.name + "(右舷)";
+                range1.startAngle = config.startAngle1;
+                range1.endAngle = config.endAngle1;
+                range1.maxRange = config.maxRange;
+                range1.color = SONAR_COLORS[sonarID];
+                range1.isVisible = true;
+                ranges.append(range1);
+
+                SonarDetectionRange range2;
+                range2.sonarId = sonarID;
+                range2.sonarName = config.name + "(左舷)";
+                range2.startAngle = config.startAngle2;
+                range2.endAngle = config.endAngle2;
+                range2.maxRange = config.maxRange;
+                range2.color = SONAR_COLORS[sonarID];
+                range2.isVisible = true;
+                ranges.append(range2);
+            } else {
+                // 其他声纳只有一个分段
+                SonarDetectionRange range;
+                range.sonarId = sonarID;
+                range.sonarName = config.name;
+                range.startAngle = config.startAngle1;
+                range.endAngle = config.endAngle1;
+                range.maxRange = config.maxRange;
+                range.color = SONAR_COLORS[sonarID];
+                range.isVisible = true;
+                ranges.append(range);
+            }
+        }
+
+        m_seaChartWidget->setSonarDetectionRanges(ranges);
+        addLog("已同步声纳范围配置到海图显示");
+    }
+}
+
+
+// 扩展配置文件操作
+void MainWindow::loadExtendedConfig()
+{
+    try {
+        std::ifstream configFile("threshold_config.ini");
+        if (!configFile.is_open()) {
+            addLog("配置文件不存在，使用默认声纳范围配置");
+            return;
+        }
+
+        std::string line;
+        std::string currentSection;
+
+        while (std::getline(configFile, line)) {
+            // 跳过空行和注释
+            if (line.empty() || line[0] == '#') {
+                continue;
+            }
+
+            // 检查是否是节标题
+            if (line[0] == '[' && line.back() == ']') {
+                currentSection = line.substr(1, line.length() - 2);
+                continue;
+            }
+
+            // 解析键值对
+            size_t equalPos = line.find('=');
+            if (equalPos == std::string::npos) {
+                continue;
+            }
+
+            std::string key = line.substr(0, equalPos);
+            std::string value = line.substr(equalPos + 1);
+
+            // 移除注释部分
+            size_t commentPos = value.find('#');
+            if (commentPos != std::string::npos) {
+                value = value.substr(0, commentPos);
+            }
+
+            // 移除前后空格
+            key.erase(0, key.find_first_not_of(" \t"));
+            key.erase(key.find_last_not_of(" \t") + 1);
+            value.erase(0, value.find_first_not_of(" \t"));
+            value.erase(value.find_last_not_of(" \t") + 1);
+
+            // 处理声纳范围设置
+            if (currentSection == "SonarRanges") {
+                if (key.substr(0, 5) == "Sonar" && key.substr(6) == "_MaxRange") {
+                    int sonarID = std::stoi(key.substr(5, 1));
+                    if (sonarID >= 0 && sonarID < 4) {
+                        m_sonarRangeConfigs[sonarID].maxRange = std::stof(value);
+                        addLog(QString("加载声纳%1最大距离: %2米").arg(sonarID).arg(std::stof(value), 0, 'f', 0));
+                    }
+                }
+            }
+        }
+
+        configFile.close();
+        addLog("扩展配置已从文件加载: threshold_config.ini");
+
+    } catch (const std::exception& e) {
+        addLog(QString("加载扩展配置时出错: %1，使用默认值").arg(e.what()));
+    }
+}
+
+void MainWindow::saveExtendedConfig()
+{
+    // 首先保存设备模型的配置
+    if (m_component) {
+        DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
+        if (deviceModel) {
+            try {
+                deviceModel->saveExtendedConfig("threshold_config.ini", m_sonarRangeConfigs);
+                addLog("声纳阈值和范围配置已保存到: threshold_config.ini");
+            } catch (const std::exception& e) {
+                addLog(QString("保存扩展配置失败: %1").arg(e.what()));
+            }
+        }
+    }
 }

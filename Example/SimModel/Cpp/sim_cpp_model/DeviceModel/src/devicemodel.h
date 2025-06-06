@@ -11,6 +11,15 @@
 #include <random>
 #include "common/DMLogger.h"
 
+
+// 前向声明
+//class QMap;
+//template<typename T> class QMap;
+
+//namespace MainWindow {
+//    struct SonarRangeConfig;
+//}
+
 class DeviceModel : public CSimComponentBase
 {
 public:
@@ -117,6 +126,97 @@ public:
     void loadThresholdConfig(const std::string& filename);
 
 
+   /**
+    * @brief 声纳角度范围配置结构体（DeviceModel独立定义）
+    */
+   struct SonarAngleConfig {
+       float startAngle1;        // 第一段起始角度
+       float endAngle1;          // 第一段结束角度
+       float startAngle2;        // 第二段起始角度（仅舷侧声纳使用）
+       float endAngle2;          // 第二段结束角度（仅舷侧声纳使用）
+       bool hasTwoSegments;      // 是否有两个角度段
+
+       SonarAngleConfig() : startAngle1(0.0f), endAngle1(0.0f),
+                          startAngle2(0.0f), endAngle2(0.0f),
+                          hasTwoSegments(false) {}
+
+       SonarAngleConfig(float start1, float end1, float start2 = 0.0f, float end2 = 0.0f, bool twoSeg = false)
+           : startAngle1(start1), endAngle1(end1), startAngle2(start2), endAngle2(end2), hasTwoSegments(twoSeg) {}
+   };
+
+   /**
+    * @brief 声纳范围配置结构体（DeviceModel独立定义，仅用于保存配置文件）
+    */
+   struct SonarRangeConfig {
+       int sonarId;
+       float maxRange;           // 最大探测距离（米）
+       float startAngle1;        // 第一段起始角度
+       float endAngle1;          // 第一段结束角度
+       float startAngle2;        // 第二段起始角度（仅舷侧声纳使用）
+       float endAngle2;          // 第二段结束角度（仅舷侧声纳使用）
+       bool hasTwoSegments;      // 是否有两个角度段
+
+       SonarRangeConfig() : sonarId(-1), maxRange(30000.0f),
+                          startAngle1(0.0f), endAngle1(0.0f),
+                          startAngle2(0.0f), endAngle2(0.0f),
+                          hasTwoSegments(false) {}
+   };
+
+   /**
+    * @brief 保存扩展配置到文件（独立接口，不依赖外部类型）
+    * @param filename 配置文件路径
+    * @param sonarRangeMap 声纳范围配置映射 (sonarID -> SonarRangeConfig)
+    */
+   void saveExtendedConfig(const std::string& filename, const std::map<int, SonarRangeConfig>& sonarRangeMap) const;
+
+   /**
+    * @brief 从文件加载扩展配置
+    * @param filename 配置文件路径
+    */
+   void loadExtendedConfig(const std::string& filename);
+
+   /**
+    * @brief 设置声纳角度范围配置
+    * @param sonarID 声纳ID
+    * @param config 角度配置
+    */
+   void setSonarAngleConfig(int sonarID, const SonarAngleConfig& config);
+
+   /**
+    * @brief 获取声纳角度范围配置
+    * @param sonarID 声纳ID
+    * @return 角度配置
+    */
+   SonarAngleConfig getSonarAngleConfig(int sonarID) const;
+
+   /**
+    * @brief 获取所有声纳的角度配置（用于外部同步显示）
+    * @return 所有声纳的角度配置映射
+    */
+   std::map<int, SonarAngleConfig> getAllSonarAngleConfigs() const;
+
+   /**
+    * @brief 设置声纳最大显示距离（仅用于保存配置，不影响探测逻辑）
+    * @param sonarID 声纳ID
+    * @param maxRange 最大显示距离
+    */
+   void setSonarMaxDisplayRange(int sonarID, float maxRange);
+
+   /**
+    * @brief 获取声纳最大显示距离
+    * @param sonarID 声纳ID
+    * @return 最大显示距离
+    */
+   float getSonarMaxDisplayRange(int sonarID) const;
+
+   /**
+    * @brief 获取所有声纳的显示距离配置
+    * @return 所有声纳的显示距离映射
+    */
+   std::map<int, float> getAllSonarMaxDisplayRanges() const;
+
+
+
 private:
     /**
      * @brief 处理声纳控制命令
@@ -129,18 +229,6 @@ private:
      * @param simMessage 接收到的初始化消息
      */
     void handleSonarInitialization(CSimMessage* simMessage);
-
-//    /**
-//     * @brief 处理平台自噪声数据
-//     * @param simData 接收到的平台自噪声数据
-//     */
-//    void handlePlatformSelfSound(CSimData* simData);
-
-//    /**
-//     * @brief 处理传播声音数据
-//     * @param simMessage 接收到的传播声音消息
-//     */
-//    void handlePropagatedSound(CSimMessage* simMessage);
 
     /**
      * @brief 处理平台机动信息
@@ -268,6 +356,22 @@ private:
      */
     double getEffectiveThreshold(int sonarID) const;
 
+
+    // *** 声纳角度范围配置相关 ***
+   std::map<int, SonarAngleConfig> m_sonarAngleConfigs = {
+      {0, SonarAngleConfig(-45.0f, 45.0f)},                                    // 艏端声纳: -45°到45°
+      {1, SonarAngleConfig(45.0f, 135.0f, -135.0f, -45.0f, true)},           // 舷侧声纳: 两个分段
+      {2, SonarAngleConfig(135.0f, 225.0f)},                                  // 粗拖声纳: 135°到225°
+      {3, SonarAngleConfig(120.0f, 240.0f)}                                   // 细拖声纳: 120°到240°
+   };
+
+   // *** 声纳最大显示距离配置（仅用于界面显示，不影响探测逻辑）***
+   std::map<int, float> m_sonarMaxDisplayRanges = {
+      {0, 30000.0f},  // 艏端声纳默认30km
+      {1, 25000.0f},  // 舷侧声纳默认25km
+      {2, 35000.0f},  // 粗拖声纳默认35km
+      {3, 40000.0f}   // 细拖声纳默认40km
+   };
 
 private:
     CSimModelAgentBase* m_agent;               // 代理对象

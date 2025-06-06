@@ -12,6 +12,7 @@
 #include "common/define.h"
 #include <QString>
 #include <QDateTime>
+#include <QMap>
 
 constexpr const double DeviceModel::MAX_FREQUENCY_KHZ;
 
@@ -1042,4 +1043,247 @@ void DeviceModel::loadThresholdConfig(const std::string& filename)
 DeviceModel::~DeviceModel()
 {
     LOG_INFO("Sonar model destroyed");
+}
+
+
+
+// 实现扩展配置保存方法
+void DeviceModel::saveExtendedConfig(const std::string& filename, const std::map<int, SonarRangeConfig>& sonarRangeMap) const
+{
+    try {
+        std::ofstream configFile(filename);
+        if (!configFile.is_open()) {
+            LOG_ERRORF("无法打开配置文件进行写入: %s", filename.c_str());
+            return;
+        }
+
+        // 写入配置文件头
+        configFile << "# 声纳探测阈值和角度范围配置文件\n";
+        configFile << "# 生成时间: " << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss").toStdString() << "\n\n";
+
+        // 写入各声纳的阈值
+        configFile << "[SonarThresholds]\n";
+        const char* sonarNames[] = {"艏端声纳", "舷侧声纳", "粗拖声纳", "细拖声纳"};
+        for (int sonarID = 0; sonarID < 4; sonarID++) {
+            auto it = m_detectionThresholds.find(sonarID);
+            double threshold = (it != m_detectionThresholds.end()) ? it->second : 33.0;
+            configFile << "Sonar" << sonarID << "_Threshold=" << std::fixed << std::setprecision(2) << threshold
+                      << "  # " << sonarNames[sonarID] << "\n";
+        }
+
+        // 写入声纳角度范围配置
+        configFile << "\n[SonarAngles]\n";
+        for (int sonarID = 0; sonarID < 4; sonarID++) {
+            auto it = m_sonarAngleConfigs.find(sonarID);
+            if (it != m_sonarAngleConfigs.end()) {
+                const SonarAngleConfig& config = it->second;
+                configFile << "Sonar" << sonarID << "_StartAngle1=" << std::fixed << std::setprecision(1) << config.startAngle1
+                          << "  # " << sonarNames[sonarID] << " 起始角度1\n";
+                configFile << "Sonar" << sonarID << "_EndAngle1=" << std::fixed << std::setprecision(1) << config.endAngle1
+                          << "  # " << sonarNames[sonarID] << " 结束角度1\n";
+
+                if (config.hasTwoSegments) {
+                    configFile << "Sonar" << sonarID << "_StartAngle2=" << std::fixed << std::setprecision(1) << config.startAngle2
+                              << "  # " << sonarNames[sonarID] << " 起始角度2\n";
+                    configFile << "Sonar" << sonarID << "_EndAngle2=" << std::fixed << std::setprecision(1) << config.endAngle2
+                              << "  # " << sonarNames[sonarID] << " 结束角度2\n";
+                    configFile << "Sonar" << sonarID << "_HasTwoSegments=true"
+                              << "  # " << sonarNames[sonarID] << " 是否有两个分段\n";
+                } else {
+                    configFile << "Sonar" << sonarID << "_HasTwoSegments=false"
+                              << "  # " << sonarNames[sonarID] << " 是否有两个分段\n";
+                }
+            }
+        }
+
+        // 写入声纳最大显示距离配置
+        configFile << "\n[SonarRanges]\n";
+        for (const auto& pair : sonarRangeMap) {
+            int sonarID = pair.first;
+            const SonarRangeConfig& rangeConfig = pair.second;
+            if (sonarID >= 0 && sonarID < 4) {
+                configFile << "Sonar" << sonarID << "_MaxRange=" << std::fixed << std::setprecision(0) << rangeConfig.maxRange
+                          << "  # " << sonarNames[sonarID] << " 最大显示距离(米)\n";
+            }
+        }
+
+        configFile.close();
+        LOG_INFOF("扩展配置已保存到: %s", filename.c_str());
+
+    } catch (const std::exception& e) {
+        LOG_ERRORF("保存扩展配置时出错: %s", e.what());
+    }
+}
+
+// 实现扩展配置加载方法（包括加载显示距离配置）
+void DeviceModel::loadExtendedConfig(const std::string& filename)
+{
+    try {
+        std::ifstream configFile(filename);
+        if (!configFile.is_open()) {
+            LOG_WARNF("无法打开配置文件: %s，使用默认配置", filename.c_str());
+            return;
+        }
+
+        std::string line;
+        std::string currentSection;
+
+        // 临时存储加载的角度配置
+        std::map<int, SonarAngleConfig> tempAngleConfigs;
+
+        while (std::getline(configFile, line)) {
+            // 跳过空行和注释
+            if (line.empty() || line[0] == '#') {
+                continue;
+            }
+
+            // 检查是否是节标题
+            if (line[0] == '[' && line.back() == ']') {
+                currentSection = line.substr(1, line.length() - 2);
+                continue;
+            }
+
+            // 解析键值对
+            size_t equalPos = line.find('=');
+            if (equalPos == std::string::npos) {
+                continue;
+            }
+
+            std::string key = line.substr(0, equalPos);
+            std::string value = line.substr(equalPos + 1);
+
+            // 移除注释部分
+            size_t commentPos = value.find('#');
+            if (commentPos != std::string::npos) {
+                value = value.substr(0, commentPos);
+            }
+
+            // 移除前后空格
+            key.erase(0, key.find_first_not_of(" \t"));
+            key.erase(key.find_last_not_of(" \t") + 1);
+            value.erase(0, value.find_first_not_of(" \t"));
+            value.erase(value.find_last_not_of(" \t") + 1);
+
+            // 处理声纳阈值设置
+            if (currentSection == "SonarThresholds") {
+                if (key.substr(0, 5) == "Sonar" && key.substr(6) == "_Threshold") {
+                    int sonarID = std::stoi(key.substr(5, 1));
+                    if (sonarID >= 0 && sonarID < 4) {
+                        m_detectionThresholds[sonarID] = std::stod(value);
+                        LOG_INFOF("加载声纳%d阈值: %.2f", sonarID, std::stod(value));
+                    }
+                }
+            }
+            // 处理声纳角度范围设置
+            else if (currentSection == "SonarAngles") {
+                if (key.substr(0, 5) == "Sonar" && key.length() > 6) {
+                    int sonarID = std::stoi(key.substr(5, 1));
+                    if (sonarID >= 0 && sonarID < 4) {
+                        // 确保临时配置结构存在
+                        if (tempAngleConfigs.find(sonarID) == tempAngleConfigs.end()) {
+                            tempAngleConfigs[sonarID] = SonarAngleConfig();
+                        }
+
+                        std::string paramName = key.substr(7); // 从第7个字符开始
+
+                        if (paramName == "_StartAngle1") {
+                            tempAngleConfigs[sonarID].startAngle1 = std::stof(value);
+                        } else if (paramName == "_EndAngle1") {
+                            tempAngleConfigs[sonarID].endAngle1 = std::stof(value);
+                        } else if (paramName == "_StartAngle2") {
+                            tempAngleConfigs[sonarID].startAngle2 = std::stof(value);
+                        } else if (paramName == "_EndAngle2") {
+                            tempAngleConfigs[sonarID].endAngle2 = std::stof(value);
+                        } else if (paramName == "_HasTwoSegments") {
+                            tempAngleConfigs[sonarID].hasTwoSegments = (value == "true" || value == "1");
+                        }
+                    }
+                }
+            }
+            // 处理声纳最大显示距离设置
+            else if (currentSection == "SonarRanges") {
+                if (key.substr(0, 5) == "Sonar" && key.substr(6) == "_MaxRange") {
+                    int sonarID = std::stoi(key.substr(5, 1));
+                    if (sonarID >= 0 && sonarID < 4) {
+                        m_sonarMaxDisplayRanges[sonarID] = std::stof(value);
+                        LOG_INFOF("加载声纳%d最大显示距离: %.0f米", sonarID, std::stof(value));
+                    }
+                }
+            }
+        }
+
+        configFile.close();
+
+        // 应用加载的角度配置
+        for (const auto& pair : tempAngleConfigs) {
+            m_sonarAngleConfigs[pair.first] = pair.second;
+            const SonarAngleConfig& config = pair.second;
+            LOG_INFOF("加载声纳%d角度配置: [%.1f°-%.1f°]%s",
+                      pair.first, config.startAngle1, config.endAngle1,
+                      config.hasTwoSegments ? " + [" + std::to_string(config.startAngle2) + "°-" + std::to_string(config.endAngle2) + "°]" : "");
+        }
+
+        LOG_INFOF("扩展配置已从文件加载: %s", filename.c_str());
+
+    } catch (const std::exception& e) {
+        LOG_ERRORF("加载扩展配置时出错: %s，使用默认值", e.what());
+    }
+}
+
+// 实现声纳角度配置的设置和获取方法
+void DeviceModel::setSonarAngleConfig(int sonarID, const SonarAngleConfig& config)
+{
+    if (sonarID >= 0 && sonarID < 4) {
+        m_sonarAngleConfigs[sonarID] = config;
+        LOG_INFOF("设置声纳%d角度配置: [%.1f°-%.1f°]%s",
+                  sonarID, config.startAngle1, config.endAngle1,
+                  config.hasTwoSegments ? " + [" + std::to_string(config.startAngle2) + "°-" + std::to_string(config.endAngle2) + "°]" : "");
+    } else {
+        LOG_WARNF("无效的声纳ID: %d", sonarID);
+    }
+}
+
+DeviceModel::SonarAngleConfig DeviceModel::getSonarAngleConfig(int sonarID) const
+{
+    auto it = m_sonarAngleConfigs.find(sonarID);
+    if (it != m_sonarAngleConfigs.end()) {
+        return it->second;
+    }
+
+    LOG_WARNF("无效的声纳ID: %d，返回默认角度配置", sonarID);
+    return SonarAngleConfig();
+}
+
+// 获取所有声纳的角度配置
+std::map<int, DeviceModel::SonarAngleConfig> DeviceModel::getAllSonarAngleConfigs() const
+{
+    return m_sonarAngleConfigs;
+}
+
+// 设置和获取声纳最大显示距离
+void DeviceModel::setSonarMaxDisplayRange(int sonarID, float maxRange)
+{
+    if (sonarID >= 0 && sonarID < 4) {
+        m_sonarMaxDisplayRanges[sonarID] = maxRange;
+        LOG_INFOF("设置声纳%d最大显示距离: %.0f米", sonarID, maxRange);
+    } else {
+        LOG_WARNF("无效的声纳ID: %d", sonarID);
+    }
+}
+
+float DeviceModel::getSonarMaxDisplayRange(int sonarID) const
+{
+    auto it = m_sonarMaxDisplayRanges.find(sonarID);
+    if (it != m_sonarMaxDisplayRanges.end()) {
+        return it->second;
+    }
+
+    LOG_WARNF("无效的声纳ID: %d，返回默认显示距离", sonarID);
+    return 30000.0f; // 默认30km
+}
+
+// 获取所有声纳的显示距离配置
+std::map<int, float> DeviceModel::getAllSonarMaxDisplayRanges() const
+{
+    return m_sonarMaxDisplayRanges;
 }
