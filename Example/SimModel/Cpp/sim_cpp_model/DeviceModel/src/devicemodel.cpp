@@ -157,16 +157,6 @@ void DeviceModel::start()
     updateSonarState();
 }
 
-void DeviceModel::stop()
-{
-    LOG_INFO("Multi-target sonar model stopped");
-}
-
-void DeviceModel::destroy()
-{
-    LOG_INFO("Multi-target sonar model destroyed");
-}
-
 void DeviceModel::onMessage(CSimMessage* simMessage)
 {
     if (!simMessage || !m_agent) {
@@ -219,202 +209,6 @@ void DeviceModel::onMessage(CSimMessage* simMessage)
     }
 }
 
-void DeviceModel::handleSonarControlOrder(CSimMessage* simMessage)
-{
-    const CMsg_SonarCommandControlOrder* order =
-        reinterpret_cast<const CMsg_SonarCommandControlOrder*>(simMessage->data);
-
-    // 检查声纳ID是否在有效范围内（0-3）
-    if (order->sonarID < 0 || order->sonarID >= 4) {
-        LOG_WARNF("Invalid sonar ID: %d, should be 0-3", order->sonarID);
-        return;
-    }
-
-    // 找到对应的声纳ID并更新状态
-    if (m_sonarStates.find(order->sonarID) != m_sonarStates.end()) {
-        CData_SonarState& state = m_sonarStates[order->sonarID];
-
-        // 更新工作状态
-        state.arrayWorkingState = order->arrayWorkingOrder;
-        state.activeWorkingState = order->activeWorkingOrder;
-        state.passiveWorkingState = order->passiveWorkingOrder;
-        state.scoutingWorkingState = order->scoutingWorkingOrder;
-        state.multiSendWorkingState = order->multiSendWorkingOrder;
-        state.multiReceiveWorkingState = order->multiReceiveWorkingOrder;
-        state.activeTransmitWorkingState = order->activeTransmitWorkingOrder;
-
-        if(ifOutput){
-            log << __FUNCTION__ << ":" << __LINE__
-                      << " Updated sonar " << order->sonarID << " state: "
-                      << " array=" << state.arrayWorkingState
-                      << " active=" << state.activeWorkingState
-                      << " passive=" << state.passiveWorkingState
-                      << " scouting=" << state.scoutingWorkingState
-                      << std::endl;
-            log.flush();
-        }
-
-        // 发布更新后的声纳状态
-        updateSonarState();
-    }
-}
-
-//// 处理传播声音数据
-//void DeviceModel::handlePropagatedSound(CSimMessage* simMessage)
-//{
-//    std::string topic = simMessage->topic;
-
-//    // 使用新的多目标处理方法
-//    if (topic == MSG_PropagatedContinuousSound) {
-//        updateMultiTargetPropagatedSoundCache(simMessage);
-//    }
-
-//    else if (topic == MSG_PropagatedActivePulseSound) {
-//        const CMsg_PropagatedActivePulseSoundListStruct* sounds =
-//            reinterpret_cast<const CMsg_PropagatedActivePulseSoundListStruct*>(simMessage->data);
-
-//        std::cout << __FUNCTION__ << ":" << __LINE__
-//                  << " Received active pulse sound data, count: "
-//                  << sounds->propagateActivePulseList.size() << std::endl;
-//    }
-//    else if (topic == MSG_PropagatedCommPulseSound) {
-//        const CMsg_PropagatedCommPulseSoundListStruct* sounds =
-//            reinterpret_cast<const CMsg_PropagatedCommPulseSoundListStruct*>(simMessage->data);
-
-//        std::cout << __FUNCTION__ << ":" << __LINE__
-//                  << " Received comm pulse sound data, count: "
-//                  << sounds->propagatedCommList.size() << std::endl;
-//    }
-//}
-
-//// 平台自噪声数据
-//void DeviceModel::handlePlatformSelfSound(CSimData* simData)
-//{
-//    if (!simData->data)
-//    {
-//        return;
-//    }
-
-//    updatePlatformSelfSoundCache(simData);
-//}
-
-void DeviceModel::step(int64 curTime, int32 step)
-{
-    LOG_INFO("Multi-target sonar model step");
-    (void)step;
-
-    if (!m_agent || !m_initialized)
-    {
-        return;
-    }
-    this->curTime = curTime;
-
-    CMsg_SonarWorkState sta;
-    sta.platformId = m_agent->getPlatformEntity()->id;
-    sta.maxDetectRange = MAX_DETECTION_RANGE;
-    sta.sonarOnOff = true;
-    CSimMessage cSimMessage;
-    cSimMessage.sender = m_agent->getPlatformEntity()->id;
-    memset(cSimMessage.topic,0,EventTypeLen);
-    memcpy(cSimMessage.topic,Msg_SonarWorkState,sizeof(Msg_SonarWorkState));
-    cSimMessage.data=&sta;
-    m_agent->sendMessage(&cSimMessage);
-
-    // 获取平台机动信息
-    CSimData* motionData = m_agent->getSubscribeSimData(Data_Motion, m_agent->getPlatformEntity()->id);
-    if (motionData) {
-        handleMotionData(motionData);
-    }
-
-    // 获取平台自噪声数据
-    int64 platformId = m_agent->getPlatformEntity()->id;
-    LOG_INFOF("Attempting to get platform self sound data for platformId: %lld", platformId);
-
-    CSimData* selfSoundData = m_agent->getSubscribeSimData(Data_PlatformSelfSound, platformId);
-    if (selfSoundData) {
-        LOG_INFOF("Retrieved platform self sound data with timestamp: %lld", selfSoundData->time);
-//        handlePlatformSelfSound(selfSoundData);
-        updatePlatformSelfSoundCache(selfSoundData);
-    } else {
-        LOG_WARN("Failed to retrieve platform self sound data in step()");
-        LOG_WARNF("Topic: %s, PlatformId: %lld", Data_PlatformSelfSound, platformId);
-    }
-
-    // 执行多目标声纳方程计算
-    performMultiTargetSonarEquationCalculation();
-}
-
-void DeviceModel::handleMotionData(CSimData* simData)
-{
-    if (!simData->data) return;
-
-    const CData_Motion* motionData =
-        reinterpret_cast<const CData_Motion*>(simData->data);
-
-    // 更新平台机动信息
-    m_platformMotion = *motionData;
-
-    std::cout << __FUNCTION__ << ":" << __LINE__
-              << std::fixed << std::setprecision(6)
-              << " Platform motion updated: "
-              << " lon=" << m_platformMotion.x
-              << " lat=" << m_platformMotion.y
-              << " alt=" << m_platformMotion.z
-              << " heading=" << m_platformMotion.rotation
-              << " speed=" << m_platformMotion.curSpeed
-              << std::endl;
-}
-
-const char* DeviceModel::getVersion()
-{
-    return "Multi-Target Sonar Model V2.0.0.20240605";
-}
-
-void DeviceModel::updateSonarState()
-{
-    if (!m_agent)
-    {
-        return;
-    }
-
-    // 为每个声纳阵列发布状态（ID：0-3）
-    for (const auto& entry : m_sonarStates) {
-        CData_SonarState state = entry.second;
-
-        // 发布声纳状态
-        CSimData simData;
-        simData.dataFormat = STRUCT;
-        simData.sender = m_agent->getPlatformEntity()->id;
-        memcpy(simData.topic, Data_SonarState_Topic, strlen(Data_SonarState_Topic) + 1);
-        simData.data = &state;
-        simData.length = sizeof(state);
-
-        m_agent->publishSimData(&simData);
-    }
-}
-
-void DeviceModel::handleSonarInitialization(CSimMessage* simMessage)
-{
-    const CAttr_PassiveSonarComponent* config =
-        reinterpret_cast<const CAttr_PassiveSonarComponent*>(simMessage->data);
-
-    // 检查声纳ID是否在有效范围内（0-3）
-    if (config->sonarID < 0 || config->sonarID >= 4) {
-        LOG_WARNF("Invalid sonar ID: %d, should be 0-3", config->sonarID);
-        return;
-    }
-
-    // 保存被动声纳配置
-    m_passiveSonarConfigs[config->sonarID] = *config;
-
-    std::cout << __FUNCTION__ << ":" << __LINE__
-              << " Initialized passive sonar " << config->sonarID
-              << ", mode=" << config->sonarMod
-              << ", array elements=" << config->arrayNumber
-              << std::endl;
-}
-
-
 void DeviceModel::updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage)
 {
     if (!simMessage || !simMessage->data) {
@@ -427,8 +221,6 @@ void DeviceModel::updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage)
 
     LOG_INFOF("Updating multi-target propagated sound cache, sound count: %zu",
               soundListStruct->propagatedContinuousList.size());
-
-
 
     int64 currentTime = simMessage->time;
 
@@ -445,9 +237,7 @@ void DeviceModel::updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage)
         return;
     }
 
-
     // 为每个声纳清空过期的目标数据
-
     for (int sonarID = 0; sonarID < 4; sonarID++) {
         auto& targetsData = m_multiTargetCache.sonarTargetsData[sonarID];
 
@@ -549,246 +339,6 @@ void DeviceModel::updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage)
         LOG_INFOF("Sonar %d now tracking %zu targets", sonarID, targetsData.size());
     }
 }
-
-// 平台自噪声数据
-void DeviceModel::updatePlatformSelfSoundCache(CSimData* simData)
-{
-    if (!simData || !simData->data) {
-        LOG_WARN("Invalid platform self sound data");
-        return;
-    }
-
-    const CData_PlatformSelfSound* selfSound =
-        reinterpret_cast<const CData_PlatformSelfSound*>(simData->data);
-
-    LOG_INFOF("Updating platform self sound cache, spectrum count: %zu",
-              selfSound->selfSoundSpectrumList.size());
-
-    // 清空旧的平台噪声数据
-    m_multiTargetCache.platformSelfSoundSpectrum.clear();
-
-    // 处理平台自噪声数据列表
-    for (const auto& spectrumStruct : selfSound->selfSoundSpectrumList) {
-        int sonarID = spectrumStruct.sonarID;
-
-        // 验证声纳ID范围 (0-3对应艏端、舷侧、粗拖、细拖)
-        if (sonarID < 0 || sonarID >= 4) {
-            LOG_WARNF("Invalid sonar ID in platform self sound: %d", sonarID);
-            continue;
-        }
-
-        // 提取频谱数据
-        std::vector<float> spectrum;
-        spectrum.reserve(SPECTRUM_DATA_SIZE);
-        for (int i = 0; i < SPECTRUM_DATA_SIZE; i++) {
-            spectrum.push_back(spectrumStruct.spectumData[i]);
-        }
-
-        // 存储到对应声纳的缓存中
-        m_multiTargetCache.platformSelfSoundSpectrum[sonarID] = spectrum;
-
-        LOG_INFOF("Updated platform self sound cache for sonar %d", sonarID);
-    }
-
-    m_multiTargetCache.lastPlatformSoundTime = simData->time;
-    LOG_INFOF("Platform self sound time updated to: %lld", simData->time);
-}
-
-void DeviceModel::updateEnvironmentNoiseCache(CSimMessage* simMessage)
-{
-    if (!simMessage || !simMessage->data) {
-        LOG_WARN("Invalid environment noise message");
-        return;
-    }
-
-    const CMsg_EnvironmentNoiseToSonarStruct* noiseData =
-        reinterpret_cast<const CMsg_EnvironmentNoiseToSonarStruct*>(simMessage->data);
-
-    LOG_INFO("Updating environment noise cache");
-
-    // 提取环境噪声频谱数据
-    std::vector<float> spectrum;
-    spectrum.reserve(SPECTRUM_DATA_SIZE);
-    for (int i = 0; i < SPECTRUM_DATA_SIZE; i++) {
-        spectrum.push_back(noiseData->spectrumData[i]);
-    }
-
-    // 环境噪声对所有声纳位置都是相同的，为每个声纳ID都存储一份
-    for (int sonarID = 0; sonarID < 4; sonarID++) {
-        m_multiTargetCache.environmentNoiseSpectrum[sonarID] = spectrum;
-    }
-
-    LOG_INFOF("Updated environment noise cache for all sonars, spectrum size: %zu",
-              spectrum.size());
-
-    m_multiTargetCache.lastEnvironmentNoiseTime = simMessage->time;
-    LOG_INFOF("Environment noise time updated to: %lld", simMessage->time);
-}
-
-double DeviceModel::calculateSpectrumSum(const std::vector<float>& spectrum)
-{
-    if (spectrum.empty()) {
-        return 0.0;
-    }
-
-    double sum = 0.0;
-    for (const float& value : spectrum) {
-        sum += static_cast<double>(value);
-    }
-
-    return sum;
-}
-
-double DeviceModel::calculateDI(int sonarID)
-{
-    // 检查声纳ID是否有效
-    if (m_diParameters.find(sonarID) == m_diParameters.end()) {
-        LOG_WARNF("No DI parameters found for sonar %d, using default", sonarID);
-        return 9.5;  // 默认值
-    }
-
-    const DIParameters& params = m_diParameters[sonarID];
-    double frequency = std::min(params.frequency_khz, MAX_FREQUENCY_KHZ);  // 限制5kHz上限
-
-    // 根据声纳类型使用不同的计算公式
-    double multiplier;
-    if (sonarID == 0 || sonarID == 1) {
-        // 艏端声纳(ID=0)和舷侧声纳(ID=1): DI = 20lg(f) + offset
-        multiplier = 20.0;
-    } else if (sonarID == 2 || sonarID == 3) {
-        // 粗拖声纳(ID=2)和细拖声纳(ID=3): DI = 10lg(f) + offset
-        multiplier = 10.0;
-    } else {
-        // 其他声纳使用默认20倍系数
-        multiplier = 20.0;
-    }
-
-    if (frequency > 0.0) {
-        double di = multiplier * log10(frequency) + params.offset;
-        LOG_DEBUGF("Calculated DI for sonar %d: f=%.1fkHz, multiplier=%.0f, offset=%.2f, DI=%.2f",
-                   sonarID, frequency, multiplier, params.offset, di);
-        return di;
-    } else {
-        return params.offset;  // 频率为0时只返回偏移量
-    }
-}
-
-double DeviceModel::calculateTargetSonarEquation(int sonarID, const TargetData& targetData)
-{
-    LOG_INFOF("=== Calculating equation for sonar %d, target %d ===", sonarID, targetData.targetId);
-
-    // 检查目标数据有效性
-    if (!targetData.isValid || targetData.propagatedSpectrum.empty()) {
-        LOG_WARNF("Invalid target data for sonar %d, target %d - isValid:%d, spectrumSize:%zu",
-                  sonarID, targetData.targetId, targetData.isValid, targetData.propagatedSpectrum.size());
-        return 0.0;
-    }
-
-    // 检查平台自噪声和环境噪声数据
-    auto platformIt = m_multiTargetCache.platformSelfSoundSpectrum.find(sonarID);
-    auto environmentIt = m_multiTargetCache.environmentNoiseSpectrum.find(sonarID);
-
-    if (platformIt == m_multiTargetCache.platformSelfSoundSpectrum.end()) {
-        LOG_WARNF("Missing platform noise data for sonar %d", sonarID);
-        return 0.0;
-    }
-
-    if (environmentIt == m_multiTargetCache.environmentNoiseSpectrum.end()) {
-        LOG_WARNF("Missing environment noise data for sonar %d", sonarID);
-        return 0.0;
-    }
-
-    LOG_INFOF("Sonar %d data check passed - platform spectrum size:%zu, environment spectrum size:%zu, target spectrum size:%zu",
-              sonarID, platformIt->second.size(), environmentIt->second.size(), targetData.propagatedSpectrum.size());
-
-    // 计算频谱累加求和
-    double propagatedSum = calculateSpectrumSum(targetData.propagatedSpectrum);     // |阵元谱级|
-    double platformSum = calculateSpectrumSum(platformIt->second);                  // |平台背景|
-    double environmentSum = calculateSpectrumSum(environmentIt->second);            // |海洋噪声|
-
-    LOG_INFOF("Spectrum sums - propagated:%.2f, platform:%.2f, environment:%.2f",
-                 propagatedSum, platformSum, environmentSum);
-
-
-    // 计算SL-TL-NL = 10lg |阵元谱级|^2/(|平台背景|^2+|海洋噪声|^2)
-    double propagatedSquare = propagatedSum * propagatedSum;            // |阵元谱级|^2
-    double platformSquare = platformSum * platformSum;                 // |平台背景|^2
-    double environmentSquare = environmentSum * environmentSum;         // |海洋噪声|^2
-
-    double denominator = platformSquare + environmentSquare;
-    double sl_tl_nl = 0.0;
-
-    if (denominator > 0.0 && propagatedSquare > 0.0) {
-        sl_tl_nl = 10.0 * log10(propagatedSquare / denominator);
-    } else {
-        LOG_WARNF("Invalid spectrum data for sonar %d target %d: propagated=%.2f, platform=%.2f, environment=%.2f",
-                  sonarID, targetData.targetId, propagatedSum, platformSum, environmentSum);
-        return 0.0;
-    }
-
-    // 计算DI值
-    double di = calculateDI(sonarID);
-
-    // 计算最终结果 X = SL-TL-NL + DI
-    double result = sl_tl_nl + di;
-
-    LOG_DEBUGF("Target sonar equation result for sonar %d target %d: SL-TL-NL=%.2f, DI=%.2f, X=%.2f",
-               sonarID, targetData.targetId, sl_tl_nl, di, result);
-
-    return result;
-}
-
-void DeviceModel::performMultiTargetSonarEquationCalculation()
-{
-    LOG_DEBUG("Performing multi-target sonar equation calculation for all sonars");
-
-    // 清空之前的计算结果
-    m_multiTargetCache.multiTargetEquationResults.clear();
-
-    // 为每个声纳位置计算所有目标的声纳方程
-    for (int sonarID = 0; sonarID < 4; sonarID++) {
-        // 检查该声纳是否启用
-        auto stateIt = m_sonarStates.find(sonarID);
-        if (stateIt == m_sonarStates.end() ||
-            !stateIt->second.arrayWorkingState ||
-            !stateIt->second.passiveWorkingState) {
-            LOG_INFOF("Sonar %d is disabled, skipping calculation", sonarID);
-            continue;
-        }
-
-        LOG_INFOF("Sonar %d is enabled, calculating equations for all targets", sonarID);
-
-        const auto& targetsData = m_multiTargetCache.sonarTargetsData[sonarID];
-        std::vector<TargetEquationResult> sonarResults;
-
-        for (const auto& targetData : targetsData) {
-            // 计算该目标的声纳方程
-            double result = calculateTargetSonarEquation(sonarID, targetData);
-
-            TargetEquationResult targetResult;
-            targetResult.targetId = targetData.targetId;
-            targetResult.equationResult = result;
-            targetResult.targetDistance = targetData.targetDistance;
-            targetResult.targetBearing = targetData.targetBearing;
-            targetResult.isValid = (result > 0.0);
-
-            sonarResults.push_back(targetResult);
-
-            if (targetResult.isValid) {
-                LOG_INFOF("Sonar %d target %d equation calculated: X=%.2f (distance=%.1fm, bearing=%.1f°)",
-                          sonarID, targetData.targetId, result, targetData.targetDistance, targetData.targetBearing);
-            } else {
-                LOG_WARNF("Sonar %d target %d equation calculation failed", sonarID, targetData.targetId);
-            }
-        }
-
-        // 存储该声纳的所有目标结果
-        m_multiTargetCache.multiTargetEquationResults[sonarID] = sonarResults;
-
-        LOG_INFOF("Sonar %d completed calculation for %zu targets", sonarID, sonarResults.size());
-    }
-}
-
 bool DeviceModel::isTargetInSonarRange(int sonarID, float targetBearing, float targetDistance)
 {
     // 检查距离范围
@@ -861,25 +411,11 @@ bool DeviceModel::isTargetInSonarRange(int sonarID, float targetBearing, float t
     LOG_INFOF("=== End Debug ===");
     return inRange;
 }
-
-
-std::map<int, std::vector<DeviceModel::TargetEquationResult>> DeviceModel::getAllSonarTargetsResults()
-{
-    return m_multiTargetCache.multiTargetEquationResults;
-}
-
-
-
 std::pair<float, float> DeviceModel::getRelativeSonarAngleRange(int sonarID)
 {
     switch (sonarID) {
         case 0: // 艏端声纳 - 前向扇形区域（相对艏向 -45° to +45°）
             return std::make_pair(-45.0f, 45.0f);
-
-        case 1: // 舷侧声纳 - 左右舷侧区域
-            // 分为两段：左舷45°-135°和右舷-135°到-45°
-            // 这里简化为左舷范围，实际可能需要特殊处理
-            return std::make_pair(45.0f, 135.0f);
 
         case 2: // 粗拖声纳 - 后向扇形区域（相对艏向后方90度扇形）
             return std::make_pair(135.0f, 225.0f);
@@ -893,4 +429,421 @@ std::pair<float, float> DeviceModel::getRelativeSonarAngleRange(int sonarID)
     }
 }
 
+void DeviceModel::updateEnvironmentNoiseCache(CSimMessage* simMessage)
+{
+    if (!simMessage || !simMessage->data) {
+        LOG_WARN("Invalid environment noise message");
+        return;
+    }
 
+    const CMsg_EnvironmentNoiseToSonarStruct* noiseData =
+        reinterpret_cast<const CMsg_EnvironmentNoiseToSonarStruct*>(simMessage->data);
+
+    LOG_INFO("Updating environment noise cache");
+
+    // 提取环境噪声频谱数据
+    std::vector<float> spectrum;
+    spectrum.reserve(SPECTRUM_DATA_SIZE);
+    for (int i = 0; i < SPECTRUM_DATA_SIZE; i++) {
+        spectrum.push_back(noiseData->spectrumData[i]);
+    }
+
+    // 环境噪声对所有声纳位置都是相同的，为每个声纳ID都存储一份
+    for (int sonarID = 0; sonarID < 4; sonarID++) {
+        m_multiTargetCache.environmentNoiseSpectrum[sonarID] = spectrum;
+    }
+
+    LOG_INFOF("Updated environment noise cache for all sonars, spectrum size: %zu",
+              spectrum.size());
+
+    m_multiTargetCache.lastEnvironmentNoiseTime = simMessage->time;
+    LOG_INFOF("Environment noise time updated to: %lld", simMessage->time);
+}
+
+void DeviceModel::step(int64 curTime, int32 step)
+{
+    LOG_INFO("Multi-target sonar model step");
+    (void)step;
+
+    if (!m_agent || !m_initialized)
+    {
+        return;
+    }
+    this->curTime = curTime;
+
+    CMsg_SonarWorkState sta;
+    sta.platformId = m_agent->getPlatformEntity()->id;
+    sta.maxDetectRange = MAX_DETECTION_RANGE;
+    sta.sonarOnOff = true;
+    CSimMessage cSimMessage;
+    cSimMessage.sender = m_agent->getPlatformEntity()->id;
+    memset(cSimMessage.topic,0,EventTypeLen);
+    memcpy(cSimMessage.topic,Msg_SonarWorkState,sizeof(Msg_SonarWorkState));
+    cSimMessage.data=&sta;
+    m_agent->sendMessage(&cSimMessage);
+
+    // 获取平台机动信息
+    CSimData* motionData = m_agent->getSubscribeSimData(Data_Motion, m_agent->getPlatformEntity()->id);
+    if (motionData) {
+        handleMotionData(motionData);
+    }
+
+    // 获取平台自噪声数据
+    int64 platformId = m_agent->getPlatformEntity()->id;
+    LOG_INFOF("Attempting to get platform self sound data for platformId: %lld", platformId);
+
+    CSimData* selfSoundData = m_agent->getSubscribeSimData(Data_PlatformSelfSound, platformId);
+    if (selfSoundData) {
+        LOG_INFOF("Retrieved platform self sound data with timestamp: %lld", selfSoundData->time);
+        updatePlatformSelfSoundCache(selfSoundData);
+    } else {
+        LOG_WARN("Failed to retrieve platform self sound data in step()");
+        LOG_WARNF("Topic: %s, PlatformId: %lld", Data_PlatformSelfSound, platformId);
+    }
+
+    // 执行多目标声纳方程计算
+    performMultiTargetSonarEquationCalculation();
+}
+
+// 平台自噪声数据
+void DeviceModel::updatePlatformSelfSoundCache(CSimData* simData)
+{
+    if (!simData || !simData->data) {
+        LOG_WARN("Invalid platform self sound data");
+        return;
+    }
+
+    const CData_PlatformSelfSound* selfSound =
+        reinterpret_cast<const CData_PlatformSelfSound*>(simData->data);
+
+    LOG_INFOF("Updating platform self sound cache, spectrum count: %zu",
+              selfSound->selfSoundSpectrumList.size());
+
+    // 清空旧的平台噪声数据
+    m_multiTargetCache.platformSelfSoundSpectrum.clear();
+
+    // 处理平台自噪声数据列表
+    for (const auto& spectrumStruct : selfSound->selfSoundSpectrumList) {
+        int sonarID = spectrumStruct.sonarID;
+
+        // 验证声纳ID范围 (0-3对应艏端、舷侧、粗拖、细拖)
+        if (sonarID < 0 || sonarID >= 4) {
+            LOG_WARNF("Invalid sonar ID in platform self sound: %d", sonarID);
+            continue;
+        }
+
+        // 提取频谱数据
+        std::vector<float> spectrum;
+        spectrum.reserve(SPECTRUM_DATA_SIZE);
+        for (int i = 0; i < SPECTRUM_DATA_SIZE; i++) {
+            spectrum.push_back(spectrumStruct.spectumData[i]);
+        }
+
+        // 存储到对应声纳的缓存中
+        m_multiTargetCache.platformSelfSoundSpectrum[sonarID] = spectrum;
+
+        LOG_INFOF("Updated platform self sound cache for sonar %d", sonarID);
+    }
+
+    m_multiTargetCache.lastPlatformSoundTime = simData->time;
+    LOG_INFOF("Platform self sound time updated to: %lld", simData->time);
+}
+
+void DeviceModel::performMultiTargetSonarEquationCalculation()
+{
+    LOG_DEBUG("Performing multi-target sonar equation calculation for all sonars");
+
+    // 清空之前的计算结果
+    m_multiTargetCache.multiTargetEquationResults.clear();
+
+    // 为每个声纳位置计算所有目标的声纳方程
+    for (int sonarID = 0; sonarID < 4; sonarID++) {
+        // 检查该声纳是否启用
+        auto stateIt = m_sonarStates.find(sonarID);
+        if (stateIt == m_sonarStates.end() ||
+            !stateIt->second.arrayWorkingState ||
+            !stateIt->second.passiveWorkingState) {
+            LOG_INFOF("Sonar %d is disabled, skipping calculation", sonarID);
+            continue;
+        }
+
+        LOG_INFOF("Sonar %d is enabled, calculating equations for all targets", sonarID);
+
+        const auto& targetsData = m_multiTargetCache.sonarTargetsData[sonarID];
+        std::vector<TargetEquationResult> sonarResults;
+
+        for (const auto& targetData : targetsData) {
+            // 计算该目标的声纳方程
+            double result = calculateTargetSonarEquation(sonarID, targetData);
+
+            TargetEquationResult targetResult;
+            targetResult.targetId = targetData.targetId;
+            targetResult.equationResult = result;
+            targetResult.targetDistance = targetData.targetDistance;
+            targetResult.targetBearing = targetData.targetBearing;
+            targetResult.isValid = (result > 0.0);
+
+            sonarResults.push_back(targetResult);
+
+            if (targetResult.isValid) {
+                LOG_INFOF("Sonar %d target %d equation calculated: X=%.2f (distance=%.1fm, bearing=%.1f°)",
+                          sonarID, targetData.targetId, result, targetData.targetDistance, targetData.targetBearing);
+            } else {
+                LOG_WARNF("Sonar %d target %d equation calculation failed", sonarID, targetData.targetId);
+            }
+        }
+
+        // 存储该声纳的所有目标结果
+        m_multiTargetCache.multiTargetEquationResults[sonarID] = sonarResults;
+
+        LOG_INFOF("Sonar %d completed calculation for %zu targets", sonarID, sonarResults.size());
+    }
+}
+double DeviceModel::calculateTargetSonarEquation(int sonarID, const TargetData& targetData)
+{
+    LOG_INFOF("=== Calculating equation for sonar %d, target %d ===", sonarID, targetData.targetId);
+
+    // 检查目标数据有效性
+    if (!targetData.isValid || targetData.propagatedSpectrum.empty()) {
+        LOG_WARNF("Invalid target data for sonar %d, target %d - isValid:%d, spectrumSize:%zu",
+                  sonarID, targetData.targetId, targetData.isValid, targetData.propagatedSpectrum.size());
+        return 0.0;
+    }
+
+    // 检查平台自噪声和环境噪声数据
+    auto platformIt = m_multiTargetCache.platformSelfSoundSpectrum.find(sonarID);
+    auto environmentIt = m_multiTargetCache.environmentNoiseSpectrum.find(sonarID);
+
+    if (platformIt == m_multiTargetCache.platformSelfSoundSpectrum.end()) {
+        LOG_WARNF("Missing platform noise data for sonar %d", sonarID);
+        return 0.0;
+    }
+
+    if (environmentIt == m_multiTargetCache.environmentNoiseSpectrum.end()) {
+        LOG_WARNF("Missing environment noise data for sonar %d", sonarID);
+        return 0.0;
+    }
+
+    LOG_INFOF("Sonar %d data check passed - platform spectrum size:%zu, environment spectrum size:%zu, target spectrum size:%zu",
+              sonarID, platformIt->second.size(), environmentIt->second.size(), targetData.propagatedSpectrum.size());
+
+    // 计算频谱累加求和
+    double propagatedSum = calculateSpectrumSum(targetData.propagatedSpectrum);     // |阵元谱级|
+    double platformSum = calculateSpectrumSum(platformIt->second);                  // |平台背景|
+    double environmentSum = calculateSpectrumSum(environmentIt->second);            // |海洋噪声|
+
+    LOG_INFOF("Spectrum sums - propagated:%.2f, platform:%.2f, environment:%.2f",
+                 propagatedSum, platformSum, environmentSum);
+
+
+    // 计算SL-TL-NL = 10lg |阵元谱级|^2/(|平台背景|^2+|海洋噪声|^2)
+    double propagatedSquare = propagatedSum * propagatedSum;            // |阵元谱级|^2
+    double platformSquare = platformSum * platformSum;                 // |平台背景|^2
+    double environmentSquare = environmentSum * environmentSum;         // |海洋噪声|^2
+
+    double denominator = platformSquare + environmentSquare;
+    double sl_tl_nl = 0.0;
+
+    if (denominator > 0.0 && propagatedSquare > 0.0) {
+        sl_tl_nl = 10.0 * log10(propagatedSquare / denominator);
+    } else {
+        LOG_WARNF("Invalid spectrum data for sonar %d target %d: propagated=%.2f, platform=%.2f, environment=%.2f",
+                  sonarID, targetData.targetId, propagatedSum, platformSum, environmentSum);
+        return 0.0;
+    }
+
+    // 计算DI值
+    double di = calculateDI(sonarID);
+
+    // 计算最终结果 X = SL-TL-NL + DI
+    double result = sl_tl_nl + di;
+
+    LOG_DEBUGF("Target sonar equation result for sonar %d target %d: SL-TL-NL=%.2f, DI=%.2f, X=%.2f",
+               sonarID, targetData.targetId, sl_tl_nl, di, result);
+
+    return result;
+}
+double DeviceModel::calculateSpectrumSum(const std::vector<float>& spectrum)
+{
+    if (spectrum.empty()) {
+        return 0.0;
+    }
+
+    double sum = 0.0;
+    for (const float& value : spectrum) {
+        sum += static_cast<double>(value);
+    }
+
+    return sum;
+}
+double DeviceModel::calculateDI(int sonarID)
+{
+    // 检查声纳ID是否有效
+    if (m_diParameters.find(sonarID) == m_diParameters.end()) {
+        LOG_WARNF("No DI parameters found for sonar %d, using default", sonarID);
+        return 9.5;  // 默认值
+    }
+
+    const DIParameters& params = m_diParameters[sonarID];
+    double frequency = std::min(params.frequency_khz, MAX_FREQUENCY_KHZ);  // 限制5kHz上限
+
+    // 根据声纳类型使用不同的计算公式
+    double multiplier;
+    if (sonarID == 0 || sonarID == 1) {
+        // 艏端声纳(ID=0)和舷侧声纳(ID=1): DI = 20lg(f) + offset
+        multiplier = 20.0;
+    } else if (sonarID == 2 || sonarID == 3) {
+        // 粗拖声纳(ID=2)和细拖声纳(ID=3): DI = 10lg(f) + offset
+        multiplier = 10.0;
+    } else {
+        // 其他声纳使用默认20倍系数
+        multiplier = 20.0;
+    }
+
+    if (frequency > 0.0) {
+        double di = multiplier * log10(frequency) + params.offset;
+        LOG_DEBUGF("Calculated DI for sonar %d: f=%.1fkHz, multiplier=%.0f, offset=%.2f, DI=%.2f",
+                   sonarID, frequency, multiplier, params.offset, di);
+        return di;
+    } else {
+        return params.offset;  // 频率为0时只返回偏移量
+    }
+}
+
+
+
+
+
+
+
+
+const char* DeviceModel::getVersion()
+{
+    return "Multi-Target Sonar Model V2.0.0.20241205";
+}
+
+void DeviceModel::updateSonarState()
+{
+    if (!m_agent)
+    {
+        return;
+    }
+
+    // 为每个声纳阵列发布状态（ID：0-3）
+    for (const auto& entry : m_sonarStates) {
+        CData_SonarState state = entry.second;
+
+        // 发布声纳状态
+        CSimData simData;
+        simData.dataFormat = STRUCT;
+        simData.sender = m_agent->getPlatformEntity()->id;
+        memcpy(simData.topic, Data_SonarState_Topic, strlen(Data_SonarState_Topic) + 1);
+        simData.data = &state;
+        simData.length = sizeof(state);
+
+        m_agent->publishSimData(&simData);
+    }
+}
+
+void DeviceModel::handleSonarInitialization(CSimMessage* simMessage)
+{
+    const CAttr_PassiveSonarComponent* config =
+        reinterpret_cast<const CAttr_PassiveSonarComponent*>(simMessage->data);
+
+    // 检查声纳ID是否在有效范围内（0-3）
+    if (config->sonarID < 0 || config->sonarID >= 4) {
+        LOG_WARNF("Invalid sonar ID: %d, should be 0-3", config->sonarID);
+        return;
+    }
+
+    // 保存被动声纳配置
+    m_passiveSonarConfigs[config->sonarID] = *config;
+
+    std::cout << __FUNCTION__ << ":" << __LINE__
+              << " Initialized passive sonar " << config->sonarID
+              << ", mode=" << config->sonarMod
+              << ", array elements=" << config->arrayNumber
+              << std::endl;
+}
+
+void DeviceModel::handleSonarControlOrder(CSimMessage* simMessage)
+{
+    const CMsg_SonarCommandControlOrder* order =
+        reinterpret_cast<const CMsg_SonarCommandControlOrder*>(simMessage->data);
+
+    // 检查声纳ID是否在有效范围内（0-3）
+    if (order->sonarID < 0 || order->sonarID >= 4) {
+        LOG_WARNF("Invalid sonar ID: %d, should be 0-3", order->sonarID);
+        return;
+    }
+
+    // 找到对应的声纳ID并更新状态
+    if (m_sonarStates.find(order->sonarID) != m_sonarStates.end()) {
+        CData_SonarState& state = m_sonarStates[order->sonarID];
+
+        // 更新工作状态
+        state.arrayWorkingState = order->arrayWorkingOrder;
+        state.activeWorkingState = order->activeWorkingOrder;
+        state.passiveWorkingState = order->passiveWorkingOrder;
+        state.scoutingWorkingState = order->scoutingWorkingOrder;
+        state.multiSendWorkingState = order->multiSendWorkingOrder;
+        state.multiReceiveWorkingState = order->multiReceiveWorkingOrder;
+        state.activeTransmitWorkingState = order->activeTransmitWorkingOrder;
+
+        if(ifOutput){
+            log << __FUNCTION__ << ":" << __LINE__
+                      << " Updated sonar " << order->sonarID << " state: "
+                      << " array=" << state.arrayWorkingState
+                      << " active=" << state.activeWorkingState
+                      << " passive=" << state.passiveWorkingState
+                      << " scouting=" << state.scoutingWorkingState
+                      << std::endl;
+            log.flush();
+        }
+
+        // 发布更新后的声纳状态
+        updateSonarState();
+    }
+}
+
+
+void DeviceModel::handleMotionData(CSimData* simData)
+{
+    if (!simData->data) return;
+
+    const CData_Motion* motionData =
+        reinterpret_cast<const CData_Motion*>(simData->data);
+
+    // 更新平台机动信息
+    m_platformMotion = *motionData;
+
+    std::cout << __FUNCTION__ << ":" << __LINE__
+              << std::fixed << std::setprecision(6)
+              << " Platform motion updated: "
+              << " lon=" << m_platformMotion.x
+              << " lat=" << m_platformMotion.y
+              << " alt=" << m_platformMotion.z
+              << " heading=" << m_platformMotion.rotation
+              << " speed=" << m_platformMotion.curSpeed
+              << std::endl;
+}
+
+void DeviceModel::stop()
+{
+    LOG_INFO("Multi-target sonar model stopped");
+}
+
+void DeviceModel::destroy()
+{
+    LOG_INFO("Multi-target sonar model destroyed");
+}
+
+
+
+
+
+
+std::map<int, std::vector<DeviceModel::TargetEquationResult>> DeviceModel::getAllSonarTargetsResults()
+{
+    return m_multiTargetCache.multiTargetEquationResults;
+}
