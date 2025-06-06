@@ -681,38 +681,44 @@ double DeviceModel::calculateTargetSonarEquation(int sonarID, const TargetData& 
     LOG_INFOF("Sonar %d data check passed - platform spectrum size:%zu, environment spectrum size:%zu, target spectrum size:%zu",
               sonarID, platformIt->second.size(), environmentIt->second.size(), targetData.propagatedSpectrum.size());
 
-    // 计算频谱累加求和
+
+
+
+
+    // ############# 步骤1：计算频谱累加求和 #############
     double propagatedSum = calculateSpectrumSum(targetData.propagatedSpectrum);     // |阵元谱级|
     double platformSum = calculateSpectrumSum(platformIt->second);                  // |平台背景|
     double environmentSum = calculateSpectrumSum(environmentIt->second);            // |海洋噪声|
 
-    LOG_INFOF("Spectrum sums - propagated:%.2f, platform:%.2f, environment:%.2f",
+    LOG_INFOF("Spectrum sums >>>>>> propagated:%.2f, platform:%.2f, environment:%.2f",
                  propagatedSum, platformSum, environmentSum);
 
-
+    // ############# 步骤2：计算平方值 #############
     // 计算SL-TL-NL = 10lg |阵元谱级|^2/(|平台背景|^2+|海洋噪声|^2)
     double propagatedSquare = propagatedSum * propagatedSum;            // |阵元谱级|^2
     double platformSquare = platformSum * platformSum;                 // |平台背景|^2
     double environmentSquare = environmentSum * environmentSum;         // |海洋噪声|^2
 
-    double denominator = platformSquare + environmentSquare;
+    // ############# 步骤3：计算 SL-TL-NL #############
+    double denominator = platformSquare + environmentSquare; // 分母：噪声总和
     double sl_tl_nl = 0.0;
 
     if (denominator > 0.0 && propagatedSquare > 0.0) {
-        sl_tl_nl = 10.0 * log10(propagatedSquare / denominator);
+        sl_tl_nl = 10.0 * log10(propagatedSquare / denominator);  // 10lg(信号/噪声)
+
     } else {
-        LOG_WARNF("Invalid spectrum data for sonar %d target %d: propagated=%.2f, platform=%.2f, environment=%.2f",
+        LOG_WARNF("Invalid spectrum data for sonar %d target %d >>>>>> propagated=%.2f, platform=%.2f, environment=%.2f",
                   sonarID, targetData.targetId, propagatedSum, platformSum, environmentSum);
         return 0.0;
     }
 
-    // 计算DI值
+    // ############# 步骤4：计算DI值 #############
     double di = calculateDI(sonarID);
 
-    // 计算最终结果 X = SL-TL-NL + DI
+    // ############# 步骤5：计算最终结果 X = SL-TL-NL + DI #############
     double result = sl_tl_nl + di;
 
-    LOG_DEBUGF("Target sonar equation result for sonar %d target %d: SL-TL-NL=%.2f, DI=%.2f, X=%.2f",
+    LOG_DEBUGF("Target sonar equation result for sonar %d target %d >>>>>> SL-TL-NL=%.2f, DI=%.2f, X=%.2f",
                sonarID, targetData.targetId, sl_tl_nl, di, result);
 
     return result;
