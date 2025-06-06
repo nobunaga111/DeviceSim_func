@@ -83,11 +83,7 @@ public:
 
 
 
-    /**
-     * @brief 设置全局探测阈值（所有声纳使用相同阈值）
-     * @param threshold 探测阈值
-     */
-    void setGlobalDetectionThreshold(double threshold);
+
 
     /**
      * @brief 设置单个声纳的探测阈值
@@ -103,21 +99,10 @@ public:
      */
     double getSonarDetectionThreshold(int sonarID) const;
 
-    /**
-     * @brief 设置是否使用全局阈值
-     * @param useGlobal true=使用全局阈值，false=使用各声纳独立阈值
-     */
-    void setUseGlobalThreshold(bool useGlobal);
 
-    /**
-     * @brief 获取是否使用全局阈值
-     */
-    bool isUsingGlobalThreshold() const;
 
-    /**
-     * @brief 获取全局探测阈值
-     */
-    double getGlobalDetectionThreshold() const;
+
+
 
     /**
      * @brief 保存阈值配置到文件
@@ -359,9 +344,6 @@ private:
        {3, 43.0}   // 细拖声纳默认阈值
     };
 
-    // 全局阈值（所有声纳使用相同阈值）
-    bool m_useGlobalThreshold = true;
-    double m_globalDetectionThreshold = 33.0;
 };
 
 #endif // DEVICEMODEL_H

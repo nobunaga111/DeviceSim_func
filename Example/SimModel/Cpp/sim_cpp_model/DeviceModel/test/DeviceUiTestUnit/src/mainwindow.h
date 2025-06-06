@@ -71,8 +71,6 @@ private slots:
     void onDataGenerationTimer();
 
     //========== 阈值设置功能 ==========//
-    void onGlobalThresholdToggled(bool enabled);
-    void onGlobalThresholdChanged(double value);
     void onSonarThresholdChanged(int sonarID, double value);
     void onSaveThresholdConfig();
     void onLoadThresholdConfig();
@@ -178,9 +176,7 @@ private:
 
     //========== 阈值设置面板 ==========//
     QGroupBox* m_thresholdConfigGroup;              // 阈值配置组
-    QCheckBox* m_useGlobalThresholdCheckBox;        // 全局阈值复选框
-    QDoubleSpinBox* m_globalThresholdSpinBox;       // 全局阈值输入框
-    QLabel* m_globalThresholdLabel;                 // 全局阈值标签
+
 
     struct SonarThresholdWidget {
         QLabel* nameLabel;                          // 声纳名称标签

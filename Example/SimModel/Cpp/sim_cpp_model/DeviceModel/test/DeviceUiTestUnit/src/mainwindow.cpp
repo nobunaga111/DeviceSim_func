@@ -595,42 +595,8 @@ void MainWindow::onDataGenerationTimer()
     }
 }
 
-void MainWindow::onGlobalThresholdToggled(bool enabled)
-{
-    // 启用/禁用各声纳独立阈值输入框
-    for (auto& thresholdWidget : m_thresholdControls) {
-        thresholdWidget.thresholdSpinBox->setEnabled(!enabled);
-    }
 
-    // 更新模型中的设置
-    if (m_component) {
-        DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
-        if (deviceModel) {
-            deviceModel->setUseGlobalThreshold(enabled);
 
-            if (enabled) {
-                // 应用全局阈值
-                double globalThreshold = m_globalThresholdSpinBox->value();
-                deviceModel->setGlobalDetectionThreshold(globalThreshold);
-            }
-
-            updateThresholdDisplay();
-            addLog(QString("切换阈值模式: %1").arg(enabled ? "全局阈值" : "独立阈值"));
-        }
-    }
-}
-
-void MainWindow::onGlobalThresholdChanged(double value)
-{
-    if (m_component && m_useGlobalThresholdCheckBox->isChecked()) {
-        DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
-        if (deviceModel) {
-            deviceModel->setGlobalDetectionThreshold(value);
-            updateThresholdDisplay();
-            addLog(QString("设置全局探测阈值: %1 dB").arg(value, 0, 'f', 2));
-        }
-    }
-}
 
 // ========== 辅助函数实现 ==========
 
@@ -1176,44 +1142,16 @@ void MainWindow::generateAndSendPlatformMotionData()
 void MainWindow::createThresholdConfigPanel()
 {
     // === 阈值配置组 ===
-    m_thresholdConfigGroup = new QGroupBox("探测阈值配置");
+    m_thresholdConfigGroup = new QGroupBox("声纳探测阈值配置");
     m_thresholdConfigGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 12px; }");
 
     QVBoxLayout* thresholdLayout = new QVBoxLayout(m_thresholdConfigGroup);
 
-    // 全局阈值设置
-    QHBoxLayout* globalThresholdLayout = new QHBoxLayout();
+    // 移除全局阈值设置部分
+    // 直接创建各声纳独立阈值设置
 
-    m_useGlobalThresholdCheckBox = new QCheckBox("使用全局阈值");
-    m_useGlobalThresholdCheckBox->setChecked(true);
-    connect(m_useGlobalThresholdCheckBox, &QCheckBox::toggled,
-            this, &MainWindow::onGlobalThresholdToggled);
-    globalThresholdLayout->addWidget(m_useGlobalThresholdCheckBox);
-
-    m_globalThresholdLabel = new QLabel("全局阈值:");
-    globalThresholdLayout->addWidget(m_globalThresholdLabel);
-
-    m_globalThresholdSpinBox = new QDoubleSpinBox();
-    m_globalThresholdSpinBox->setRange(0.0, 200.0);
-    m_globalThresholdSpinBox->setSingleStep(0.1);
-    m_globalThresholdSpinBox->setDecimals(2);
-    m_globalThresholdSpinBox->setValue(33.0);
-    m_globalThresholdSpinBox->setSuffix(" dB");
-    connect(m_globalThresholdSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-            this, &MainWindow::onGlobalThresholdChanged);
-    globalThresholdLayout->addWidget(m_globalThresholdSpinBox);
-
-    globalThresholdLayout->addStretch(1);
-    thresholdLayout->addLayout(globalThresholdLayout);
-
-    // 分隔线
-    QFrame* separator = new QFrame();
-    separator->setFrameShape(QFrame::HLine);
-    separator->setFrameShadow(QFrame::Sunken);
-    thresholdLayout->addWidget(separator);
-
-    // 各声纳独立阈值设置 - 改为2行2列布局
-    QLabel* individualLabel = new QLabel("各声纳独立阈值:");
+    // 各声纳独立阈值设置 - 2行2列布局
+    QLabel* individualLabel = new QLabel("各声纳探测阈值:");
     individualLabel->setStyleSheet("font-weight: bold; color: blue;");
     thresholdLayout->addWidget(individualLabel);
 
@@ -1229,14 +1167,14 @@ void MainWindow::createThresholdConfigPanel()
         // 为每个声纳创建一个容器框架
         QFrame* thresholdFrame = new QFrame();
         thresholdFrame->setFrameStyle(QFrame::Box);
-        thresholdFrame->setStyleSheet("QFrame { border: 1px solid lightgray; border-radius: 3px; padding: 3px; }");
+        thresholdFrame->setStyleSheet("QFrame { border: 1px solid lightgray; border-radius: 3px; padding: 5px; }");
 
         QVBoxLayout* frameLayout = new QVBoxLayout(thresholdFrame);
-        frameLayout->setSpacing(2);
+        frameLayout->setSpacing(5);
 
         // 声纳名称标签
         thresholdWidget.nameLabel = new QLabel(SONAR_NAMES[sonarID]);
-        thresholdWidget.nameLabel->setStyleSheet("color: " + SONAR_COLORS[sonarID].name() + "; font-weight: bold;");
+        thresholdWidget.nameLabel->setStyleSheet("color: " + SONAR_COLORS[sonarID].name() + "; font-weight: bold; font-size: 14px;");
         frameLayout->addWidget(thresholdWidget.nameLabel);
 
         // 阈值输入框
@@ -1247,9 +1185,11 @@ void MainWindow::createThresholdConfigPanel()
         thresholdWidget.thresholdSpinBox->setRange(0.0, 200.0);
         thresholdWidget.thresholdSpinBox->setSingleStep(0.1);
         thresholdWidget.thresholdSpinBox->setDecimals(2);
-        thresholdWidget.thresholdSpinBox->setValue(33.0);
+
+        // 设置默认值
+        double defaultValues[] = {35.0, 33.0, 43.0, 43.0};
+        thresholdWidget.thresholdSpinBox->setValue(defaultValues[sonarID]);
         thresholdWidget.thresholdSpinBox->setSuffix(" dB");
-        thresholdWidget.thresholdSpinBox->setEnabled(false); // 初始禁用（使用全局阈值）
 
         // 连接信号，使用lambda捕获sonarID
         connect(thresholdWidget.thresholdSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
@@ -1259,8 +1199,8 @@ void MainWindow::createThresholdConfigPanel()
         frameLayout->addLayout(inputLayout);
 
         // 状态标签（显示当前实际使用的阈值）
-        thresholdWidget.statusLabel = new QLabel("当前: 33.0");
-        thresholdWidget.statusLabel->setStyleSheet("color: gray; font-size: 9px;");
+        thresholdWidget.statusLabel = new QLabel(QString("当前: %1").arg(defaultValues[sonarID], 0, 'f', 2));
+        thresholdWidget.statusLabel->setStyleSheet("color: blue; font-size: 10px;");
         frameLayout->addWidget(thresholdWidget.statusLabel);
 
         sonarThresholdLayout->addWidget(thresholdFrame, row, col);
@@ -1291,10 +1231,8 @@ void MainWindow::createThresholdConfigPanel()
     thresholdButtonLayout->addWidget(m_resetThresholdButton);
 
     thresholdLayout->addLayout(thresholdButtonLayout);
-
-    // 将阈值配置组添加到控制面板布局中
-    // （在 createControlPanel() 方法中调用）
 }
+
 void MainWindow::onToggleFileLogClicked()
 {
     m_fileLogEnabled = !m_fileLogEnabled;
@@ -1314,17 +1252,17 @@ void MainWindow::onToggleFileLogClicked()
     if (m_fileLogEnabled) {
         m_toggleFileLogButton->setText("暂停文件日志");
         m_toggleFileLogButton->setStyleSheet("background-color: #45b7d1; color: white;");
-        addLog("✓ 文件日志输出已启用");
+        addLog(" 文件日志输出已启用");
     } else {
         m_toggleFileLogButton->setText("恢复文件日志");
         m_toggleFileLogButton->setStyleSheet("background-color: #95a5a6; color: white;");
-        addLog("⏸ 文件日志输出已暂停");
+        addLog(" 文件日志输出已暂停");
     }
 }
 
 void MainWindow::onSonarThresholdChanged(int sonarID, double value)
 {
-    if (m_component && !m_useGlobalThresholdCheckBox->isChecked()) {
+    if (m_component) {
         DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
         if (deviceModel) {
             deviceModel->setSonarDetectionThreshold(sonarID, value);
@@ -1342,12 +1280,9 @@ void MainWindow::onSaveThresholdConfig()
         DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
         if (deviceModel) {
             try {
-                // 直接使用固定文件名，不带时间戳
                 QString configFileName = "threshold_config.ini";
-
                 deviceModel->saveThresholdConfig(configFileName.toStdString());
                 addLog(QString("阈值配置已保存到: %1").arg(configFileName));
-
             } catch (const std::exception& e) {
                 addLog(QString("保存阈值配置失败: %1").arg(e.what()));
             }
@@ -1362,11 +1297,9 @@ void MainWindow::onLoadThresholdConfig()
         DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
         if (deviceModel) {
             try {
-                // 使用相同的固定文件名
                 deviceModel->loadThresholdConfig("threshold_config.ini");
                 syncThresholdFromModel();
                 addLog("阈值配置已从 threshold_config.ini 加载");
-
             } catch (const std::exception& e) {
                 addLog(QString("加载阈值配置失败: %1").arg(e.what()));
             }
@@ -1380,15 +1313,13 @@ void MainWindow::onResetThreshold()
         DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
         if (deviceModel) {
             // 重置为默认值
-            deviceModel->setUseGlobalThreshold(true);
-            deviceModel->setGlobalDetectionThreshold(33.0);
-
+            double defaultValues[] = {35.0, 33.0, 43.0, 43.0};
             for (int sonarID = 0; sonarID < 4; sonarID++) {
-                deviceModel->setSonarDetectionThreshold(sonarID, 33.0);
+                deviceModel->setSonarDetectionThreshold(sonarID, defaultValues[sonarID]);
             }
 
             syncThresholdFromModel();
-            addLog("阈值配置已重置为默认值 (33.0 dB)");
+            addLog("阈值配置已重置为默认值");
         }
     }
 }
@@ -1403,13 +1334,10 @@ void MainWindow::updateThresholdDisplay()
     // 更新各声纳的状态标签
     for (int sonarID = 0; sonarID < 4; sonarID++) {
         auto& thresholdWidget = m_thresholdControls[sonarID];
-        double effectiveThreshold = deviceModel->getSonarDetectionThreshold(sonarID);
+        double currentThreshold = deviceModel->getSonarDetectionThreshold(sonarID);
 
-        thresholdWidget.statusLabel->setText(QString("当前: %1").arg(effectiveThreshold, 0, 'f', 2));
-
-        // 如果使用全局阈值，用绿色显示；否则用蓝色显示
-        QString color = deviceModel->isUsingGlobalThreshold() ? "green" : "blue";
-        thresholdWidget.statusLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(color));
+        thresholdWidget.statusLabel->setText(QString("当前: %1").arg(currentThreshold, 0, 'f', 2));
+        thresholdWidget.statusLabel->setStyleSheet("color: blue; font-size: 10px;");
     }
 }
 
@@ -1420,22 +1348,11 @@ void MainWindow::syncThresholdFromModel()
     DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
     if (!deviceModel) return;
 
-    // 同步全局阈值设置
-    m_useGlobalThresholdCheckBox->blockSignals(true);
-    m_globalThresholdSpinBox->blockSignals(true);
-
-    m_useGlobalThresholdCheckBox->setChecked(deviceModel->isUsingGlobalThreshold());
-    m_globalThresholdSpinBox->setValue(deviceModel->getGlobalDetectionThreshold());
-
-    m_useGlobalThresholdCheckBox->blockSignals(false);
-    m_globalThresholdSpinBox->blockSignals(false);
-
     // 同步各声纳阈值设置
     for (int sonarID = 0; sonarID < 4; sonarID++) {
         auto& thresholdWidget = m_thresholdControls[sonarID];
         thresholdWidget.thresholdSpinBox->blockSignals(true);
         thresholdWidget.thresholdSpinBox->setValue(deviceModel->getSonarDetectionThreshold(sonarID));
-        thresholdWidget.thresholdSpinBox->setEnabled(!deviceModel->isUsingGlobalThreshold());
         thresholdWidget.thresholdSpinBox->blockSignals(false);
     }
 
