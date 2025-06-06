@@ -31,26 +31,41 @@ DeviceModel::DeviceModel()
     // 初始化兼容性缓存
     m_equationCache = SonarEquationCache();
 
-    LOG_INFO("Sonar model created with multi-target equation calculation capability");
+//    LOG_INFO("Sonar model created with multi-target equation calculation capability");
 
     // 初始化平台机动信息
-    m_platformMotion = CData_Motion();  // 调用默认构造函数
-    m_platformMotion.action = true; //实体行动状态 false:异常   true：正常
+    m_platformMotion = CData_Motion();
+    m_platformMotion.action = true;
     m_platformMotion.isPending = false;
 
-    log.open("device_model.log", std::ios::out | std::ios::app);
-    if (!log.is_open()) {
-        std::cerr << "Failed to open log file" << std::endl;
-    }
+    // 生成带时间戳的日志文件名     // 配置 DMLogger 同时输出到控制台和文件
+    QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
+    QString logFileName = QString("device_model_%1.log").arg(timestamp);
+
+    Logger::getInstance().initialize(logFileName.toStdString(), true); // 同时启用控制台和文件
+
+    LOG_INFO("Sonar model created with multi-target equation calculation capability");
+
+//    log.open(logFileName.toStdString(), std::ios::out);
+//    if (!log.is_open()) {
+//        std::cerr << "Failed to open log file: " << logFileName.toStdString() << std::endl;
+//    } else {
+//        // 在日志文件开头写入启动信息
+//        log << "========================================" << std::endl;
+//        log << "Device Model Log Started" << std::endl;
+//        log << "Timestamp: " << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss").toStdString() << std::endl;
+//        log << "========================================" << std::endl;
+//        log.flush();
+//    }
 }
 
 DeviceModel::~DeviceModel()
 {
     LOG_INFO("Sonar model destroyed");
 
-    if (log.is_open()) {
-        log.close();
-    }
+//    if (log.is_open()) {
+//        log.close();
+//    }
 }
 
 void DeviceModel::initDetectionTrack()
@@ -166,7 +181,9 @@ void DeviceModel::onMessage(CSimMessage* simMessage)
 
     // 根据消息主题进行相应处理
     std::string topic = simMessage->topic;
-    log<<"onMessage!!!Topic:"<<topic<<"\n";
+    LOG_INFOF("onMessage!!! Topic: %s", topic.c_str());
+
+
     LOG_INFOF("Received message with topic: %s", topic.c_str());
 
     // 声纳指控指令
@@ -790,16 +807,9 @@ void DeviceModel::handleSonarControlOrder(CSimMessage* simMessage)
         state.multiReceiveWorkingState = order->multiReceiveWorkingOrder;
         state.activeTransmitWorkingState = order->activeTransmitWorkingOrder;
 
-        if(ifOutput){
-            log << __FUNCTION__ << ":" << __LINE__
-                      << " Updated sonar " << order->sonarID << " state: "
-                      << " array=" << state.arrayWorkingState
-                      << " active=" << state.activeWorkingState
-                      << " passive=" << state.passiveWorkingState
-                      << " scouting=" << state.scoutingWorkingState
-                      << std::endl;
-            log.flush();
-        }
+        LOG_INFOF("Updated sonar %d state: array=%d active=%d passive=%d scouting=%d",
+                  order->sonarID, state.arrayWorkingState, state.activeWorkingState,
+                  state.passiveWorkingState, state.scoutingWorkingState);
 
         // 发布更新后的声纳状态
         updateSonarState();

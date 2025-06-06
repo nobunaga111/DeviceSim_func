@@ -265,8 +265,8 @@ private:
     int64 m_lastProcessTime;                    // 上次处理时间
     int m_nextTrackId;                          // 下一个跟踪ID
 
-    std::ofstream log;
-    bool ifOutput = true;
+//    std::ofstream log;
+//    bool ifOutput = true;
 
     // *** 多目标声纳方程计算相关的成员变量 ***
     MultiTargetSonarEquationCache m_multiTargetCache;  // 多目标声纳方程数据缓存
