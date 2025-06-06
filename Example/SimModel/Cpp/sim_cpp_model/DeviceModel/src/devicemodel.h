@@ -82,6 +82,56 @@ public:
     void setFileLogEnabled(bool enabled);
 
 
+
+    /**
+     * @brief 设置全局探测阈值（所有声纳使用相同阈值）
+     * @param threshold 探测阈值
+     */
+    void setGlobalDetectionThreshold(double threshold);
+
+    /**
+     * @brief 设置单个声纳的探测阈值
+     * @param sonarID 声纳ID (0-3)
+     * @param threshold 探测阈值
+     */
+    void setSonarDetectionThreshold(int sonarID, double threshold);
+
+    /**
+     * @brief 获取指定声纳的探测阈值
+     * @param sonarID 声纳ID (0-3)
+     * @return 探测阈值
+     */
+    double getSonarDetectionThreshold(int sonarID) const;
+
+    /**
+     * @brief 设置是否使用全局阈值
+     * @param useGlobal true=使用全局阈值，false=使用各声纳独立阈值
+     */
+    void setUseGlobalThreshold(bool useGlobal);
+
+    /**
+     * @brief 获取是否使用全局阈值
+     */
+    bool isUsingGlobalThreshold() const;
+
+    /**
+     * @brief 获取全局探测阈值
+     */
+    double getGlobalDetectionThreshold() const;
+
+    /**
+     * @brief 保存阈值配置到文件
+     * @param filename 配置文件路径
+     */
+    void saveThresholdConfig(const std::string& filename) const;
+
+    /**
+     * @brief 从文件加载阈值配置
+     * @param filename 配置文件路径
+     */
+    void loadThresholdConfig(const std::string& filename);
+
+
 private:
     /**
      * @brief 处理声纳控制命令
@@ -226,6 +276,12 @@ private:
      */
     bool isTargetInSonarRange(int sonarID, float targetBearing, float targetDistance);
 
+    /**
+     * @brief 获取指定声纳的有效阈值（考虑全局/独立阈值设置）
+     * @param sonarID 声纳ID
+     * @return 实际使用的阈值
+     */
+    double getEffectiveThreshold(int sonarID) const;
 
 
 private:
@@ -290,6 +346,22 @@ private:
     int64 m_lastEnvironmentNoiseLogTime = 0;  // 上次打印环境噪声日志的时间  // 新增
     int64 m_lastPlatformSelfSoundLogTime = 0; // 上次打印平台自噪声日志的时间  // 新增
     static const int64 PROPAGATED_SOUND_LOG_INTERVAL = 5000; // 5秒打印间隔
+
+
+
+
+    // *** 可配置的探测阈值相关 ***
+    // 每个声纳的探测阈值配置
+    std::map<int, double> m_detectionThresholds = {
+       {0, 33.0},  // 艏端声纳默认阈值
+       {1, 33.0},  // 舷侧声纳默认阈值
+       {2, 43.0},  // 粗拖声纳默认阈值
+       {3, 43.0}   // 细拖声纳默认阈值
+    };
+
+    // 全局阈值（所有声纳使用相同阈值）
+    bool m_useGlobalThreshold = true;
+    double m_globalDetectionThreshold = 33.0;
 };
 
 #endif // DEVICEMODEL_H

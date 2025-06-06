@@ -70,6 +70,14 @@ private slots:
     void onUpdateSonarStatus();
     void onDataGenerationTimer();
 
+    //========== 阈值设置功能 ==========//
+    void onGlobalThresholdToggled(bool enabled);
+    void onGlobalThresholdChanged(double value);
+    void onSonarThresholdChanged(int sonarID, double value);
+    void onSaveThresholdConfig();
+    void onLoadThresholdConfig();
+    void onResetThreshold();
+
 private:
     //========== UI初始化函数 ==========//
     void initializeUI();
@@ -98,6 +106,11 @@ private:
       * @brief 生成并发送平台机动数据（包括朝向信息）
       */
     void generateAndSendPlatformMotionData();
+
+    //========== 阈值设置辅助函数 ==========//
+    void createThresholdConfigPanel();
+    void updateThresholdDisplay();
+    void syncThresholdFromModel();
 
 private:
     //========== 主要布局组件 ==========//
@@ -163,7 +176,30 @@ private:
     static const QList<QColor> SONAR_COLORS;       // 声纳颜色列表
 
 
+    //========== 阈值设置面板 ==========//
+    QGroupBox* m_thresholdConfigGroup;              // 阈值配置组
+    QCheckBox* m_useGlobalThresholdCheckBox;        // 全局阈值复选框
+    QDoubleSpinBox* m_globalThresholdSpinBox;       // 全局阈值输入框
+    QLabel* m_globalThresholdLabel;                 // 全局阈值标签
+
+    struct SonarThresholdWidget {
+        QLabel* nameLabel;                          // 声纳名称标签
+        QDoubleSpinBox* thresholdSpinBox;          // 阈值输入框
+        QLabel* statusLabel;                        // 状态标签（显示当前使用的阈值）
+    };
+
+    QMap<int, SonarThresholdWidget> m_thresholdControls; // 阈值控制组件映射表
+
+    QPushButton* m_saveThresholdConfigButton;       // 保存配置按钮
+    QPushButton* m_loadThresholdConfigButton;       // 加载配置按钮
+    QPushButton* m_resetThresholdButton;            // 重置阈值按钮
+
+
+
+    //
     bool m_fileLogEnabled = true;  // 文件日志是否启用
+
+
 };
 
 #endif // MAINWINDOW_H

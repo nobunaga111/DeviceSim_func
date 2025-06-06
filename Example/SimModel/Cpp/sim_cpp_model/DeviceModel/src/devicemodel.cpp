@@ -55,6 +55,11 @@ DeviceModel::DeviceModel()
 //        log << "========================================" << std::endl;
 //        log.flush();
 //    }
+
+    // 尝试加载配置文件，如果不存在则使用默认值
+    loadThresholdConfig("sonar_threshold_config.ini");
+
+    LOG_INFO("声纳模型已创建，支持可配置探测阈值");
 }
 
 DeviceModel::~DeviceModel()
@@ -630,20 +635,27 @@ void DeviceModel::performMultiTargetSonarEquationCalculation()
             // 计算该目标的声纳方程
             double result = calculateTargetSonarEquation(sonarID, targetData);
 
+            // 获取当前声纳的有效阈值
+            double threshold = getEffectiveThreshold(sonarID);
+
             TargetEquationResult targetResult;
             targetResult.targetId = targetData.targetId;
             targetResult.equationResult = result;
             targetResult.targetDistance = targetData.targetDistance;
             targetResult.targetBearing = targetData.targetBearing;
-            targetResult.isValid = (result > 0.0);
+            // 使用配置的阈值进行判断
+            targetResult.isValid = (result > threshold);
 
             sonarResults.push_back(targetResult);
 
             if (targetResult.isValid) {
-                LOG_INFOF("Sonar %d target %d equation calculated: X=%.2f (distance=%.1fm, bearing=%.1f°)",
-                          sonarID, targetData.targetId, result, targetData.targetDistance, targetData.targetBearing);
+                LOG_INFOF("声纳%d目标%d探测成功: X=%.2f > 阈值%.2f (距离=%.1fm, 方位=%.1f°)",
+                          sonarID, targetData.targetId, result, threshold,
+                          targetData.targetDistance, targetData.targetBearing);
             } else {
-                LOG_WARNF("Sonar %d target %d equation calculation failed", sonarID, targetData.targetId);
+                LOG_INFOF("声纳%d目标%d探测失败: X=%.2f <= 阈值%.2f (距离=%.1fm, 方位=%.1f°)",
+                          sonarID, targetData.targetId, result, threshold,
+                          targetData.targetDistance, targetData.targetBearing);
             }
         }
 
@@ -718,8 +730,12 @@ double DeviceModel::calculateTargetSonarEquation(int sonarID, const TargetData& 
     // ############# 步骤5：计算最终结果 X = SL-TL-NL + DI #############
     double result = sl_tl_nl + di;
 
-    LOG_DEBUGF("Target sonar equation result for sonar %d target %d >>>>>> SL-TL-NL=%.2f, DI=%.2f, X=%.2f",
-               sonarID, targetData.targetId, sl_tl_nl, di, result);
+    // 获取当前声纳的探测阈值
+    double threshold = getEffectiveThreshold(sonarID);
+
+    LOG_DEBUGF("声纳%d目标%d方程计算: X=%.2f, 阈值=%.2f, 可探测=%s",
+               sonarID, targetData.targetId, result, threshold,
+               (result > threshold) ? "是" : "否");
 
     return result;
 }
@@ -903,4 +919,217 @@ std::map<int, std::vector<DeviceModel::TargetEquationResult>> DeviceModel::getAl
 
 void DeviceModel::setFileLogEnabled(bool enabled) {
     Logger::getInstance().enableFileOutput(enabled);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+void DeviceModel::setGlobalDetectionThreshold(double threshold)
+{
+    m_globalDetectionThreshold = threshold;
+    LOG_INFOF("设置全局探测阈值: %.2f", threshold);
+
+    // 如果当前使用全局阈值，立即应用到所有声纳
+    if (m_useGlobalThreshold) {
+        for (int sonarID = 0; sonarID < 4; sonarID++) {
+            m_detectionThresholds[sonarID] = threshold;
+        }
+        LOG_INFO("已将全局阈值应用到所有声纳");
+    }
+}
+
+void DeviceModel::setSonarDetectionThreshold(int sonarID, double threshold)
+{
+    if (sonarID < 0 || sonarID >= 4) {
+        LOG_WARNF("无效的声纳ID: %d", sonarID);
+        return;
+    }
+
+    m_detectionThresholds[sonarID] = threshold;
+    LOG_INFOF("设置声纳%d探测阈值: %.2f", sonarID, threshold);
+
+    // 如果设置了独立阈值，自动切换到非全局模式
+    if (m_useGlobalThreshold) {
+        m_useGlobalThreshold = false;
+        LOG_INFO("检测到设置独立阈值，已切换到独立阈值模式");
+    }
+}
+
+double DeviceModel::getSonarDetectionThreshold(int sonarID) const
+{
+    if (sonarID < 0 || sonarID >= 4) {
+        LOG_WARNF("无效的声纳ID: %d，返回默认阈值", sonarID);
+        return 33.0;
+    }
+
+    return getEffectiveThreshold(sonarID);
+}
+
+void DeviceModel::setUseGlobalThreshold(bool useGlobal)
+{
+    m_useGlobalThreshold = useGlobal;
+
+    if (useGlobal) {
+        // 切换到全局阈值模式，将全局阈值应用到所有声纳
+        for (int sonarID = 0; sonarID < 4; sonarID++) {
+            m_detectionThresholds[sonarID] = m_globalDetectionThreshold;
+        }
+        LOG_INFOF("切换到全局阈值模式，阈值: %.2f", m_globalDetectionThreshold);
+    } else {
+        LOG_INFO("切换到独立阈值模式");
+    }
+}
+
+bool DeviceModel::isUsingGlobalThreshold() const
+{
+    return m_useGlobalThreshold;
+}
+
+double DeviceModel::getGlobalDetectionThreshold() const
+{
+    return m_globalDetectionThreshold;
+}
+
+double DeviceModel::getEffectiveThreshold(int sonarID) const
+{
+    if (sonarID < 0 || sonarID >= 4) {
+        return 33.0; // 当声纳是除了这四个之外的，bug，默认阈值
+    }
+
+    if (m_useGlobalThreshold) {
+        return m_globalDetectionThreshold;
+    } else {
+        auto it = m_detectionThresholds.find(sonarID);
+        return (it != m_detectionThresholds.end()) ? it->second : 33.0;
+    }
+}
+
+void DeviceModel::saveThresholdConfig(const std::string& filename) const
+{
+    try {
+        std::ofstream configFile(filename);
+        if (!configFile.is_open()) {
+            LOG_ERRORF("无法打开配置文件进行写入: %s", filename.c_str());
+            return;
+        }
+
+        // 写入配置文件头
+        configFile << "# 声纳探测阈值配置文件\n";
+        configFile << "# 生成时间: " << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss").toStdString() << "\n\n";
+
+        // 写入全局设置
+        configFile << "[Global]\n";
+        configFile << "UseGlobalThreshold=" << (m_useGlobalThreshold ? "true" : "false") << "\n";
+        configFile << "GlobalDetectionThreshold=" << std::fixed << std::setprecision(2) << m_globalDetectionThreshold << "\n\n";
+
+        // 写入各声纳的独立阈值
+        configFile << "[SonarThresholds]\n";
+        const char* sonarNames[] = {"艏端声纳", "舷侧声纳", "粗拖声纳", "细拖声纳"};
+        for (int sonarID = 0; sonarID < 4; sonarID++) {
+            auto it = m_detectionThresholds.find(sonarID);
+            double threshold = (it != m_detectionThresholds.end()) ? it->second : 33.0;
+            configFile << "Sonar" << sonarID << "_Threshold=" << std::fixed << std::setprecision(2) << threshold
+                      << "  # " << sonarNames[sonarID] << "\n";
+        }
+
+        configFile.close();
+        LOG_INFOF("阈值配置已保存到: %s", filename.c_str());
+
+    } catch (const std::exception& e) {
+        LOG_ERRORF("保存阈值配置时出错: %s", e.what());
+    }
+}
+
+void DeviceModel::loadThresholdConfig(const std::string& filename)
+{
+    try {
+        std::ifstream configFile(filename);
+        if (!configFile.is_open()) {
+            LOG_WARNF("无法打开配置文件: %s，使用默认阈值", filename.c_str());
+            return;
+        }
+
+        std::string line;
+        std::string currentSection;
+
+        while (std::getline(configFile, line)) {
+            // 跳过空行和注释
+            if (line.empty() || line[0] == '#') {
+                continue;
+            }
+
+            // 检查是否是节标题
+            if (line[0] == '[' && line.back() == ']') {
+                currentSection = line.substr(1, line.length() - 2);
+                continue;
+            }
+
+            // 解析键值对
+            size_t equalPos = line.find('=');
+            if (equalPos == std::string::npos) {
+                continue;
+            }
+
+            std::string key = line.substr(0, equalPos);
+            std::string value = line.substr(equalPos + 1);
+
+            // 移除注释部分
+            size_t commentPos = value.find('#');
+            if (commentPos != std::string::npos) {
+                value = value.substr(0, commentPos);
+            }
+
+            // 移除前后空格
+            key.erase(0, key.find_first_not_of(" \t"));
+            key.erase(key.find_last_not_of(" \t") + 1);
+            value.erase(0, value.find_first_not_of(" \t"));
+            value.erase(value.find_last_not_of(" \t") + 1);
+
+            // 处理全局设置
+            if (currentSection == "Global") {
+                if (key == "UseGlobalThreshold") {
+                    m_useGlobalThreshold = (value == "true");
+                } else if (key == "GlobalDetectionThreshold") {
+                    m_globalDetectionThreshold = std::stod(value);
+                }
+            }
+            // 处理声纳阈值设置
+            else if (currentSection == "SonarThresholds") {
+                if (key.substr(0, 5) == "Sonar" && key.substr(6) == "_Threshold") {
+                    int sonarID = std::stoi(key.substr(5, 1));
+                    if (sonarID >= 0 && sonarID < 4) {
+                        m_detectionThresholds[sonarID] = std::stod(value);
+                    }
+                }
+            }
+        }
+
+        configFile.close();
+
+        // 如果使用全局阈值，应用到所有声纳
+        if (m_useGlobalThreshold) {
+            for (int sonarID = 0; sonarID < 4; sonarID++) {
+                m_detectionThresholds[sonarID] = m_globalDetectionThreshold;
+            }
+        }
+
+        LOG_INFOF("阈值配置已从文件加载: %s", filename.c_str());
+        LOG_INFOF("全局阈值模式: %s，全局阈值: %.2f",
+                  m_useGlobalThreshold ? "启用" : "禁用", m_globalDetectionThreshold);
+
+        for (int sonarID = 0; sonarID < 4; sonarID++) {
+            LOG_INFOF("！！！！！！！！！声纳%d阈值: %.2f", sonarID, getEffectiveThreshold(sonarID));
+        }
+
+    } catch (const std::exception& e) {
+        LOG_ERRORF("加载阈值配置时出错: %s，使用默认值", e.what());
+    }
 }
