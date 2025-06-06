@@ -385,6 +385,9 @@ void MainWindow::createLogPanel()
 
     logLayout->addWidget(m_logTextEdit);
 
+
+
+
     // 创建日志控制按钮
     QHBoxLayout* logButtonLayout = new QHBoxLayout();
 
@@ -392,15 +395,18 @@ void MainWindow::createLogPanel()
     m_clearLogButton->setStyleSheet("background-color: #ff6b6b; color: white;");
     connect(m_clearLogButton, &QPushButton::clicked, this, &MainWindow::onClearLogClicked);
 
-    QPushButton* saveLogButton = new QPushButton("保存日志");
-    saveLogButton->setStyleSheet("background-color: #4ecdc4; color: white;");
-    // TODO: 连接保存日志功能
+    // 切换文件日志按钮
+    m_toggleFileLogButton = new QPushButton("暂停文件日志");
+    m_toggleFileLogButton->setStyleSheet("background-color: #45b7d1; color: white;");
+    connect(m_toggleFileLogButton, &QPushButton::clicked, this, &MainWindow::onToggleFileLogClicked);
 
     logButtonLayout->addStretch(1);
-    logButtonLayout->addWidget(saveLogButton);
+    logButtonLayout->addWidget(m_toggleFileLogButton);
     logButtonLayout->addWidget(m_clearLogButton);
 
     logLayout->addLayout(logButtonLayout);
+
+
 
     // 右侧分割器
     m_rightSplitter->addWidget(logPanel);
@@ -508,7 +514,7 @@ void MainWindow::onPlatformPositionChanged(int platformId, const QPointF& newPos
                                      .arg(newPosition.x(), 0, 'f', 4)
                                      .arg(newPosition.y(), 0, 'f', 4));
 
-    // 修复这行的格式化：
+    // 格式化：
     addLog(QString("平台位置更新: %1°E, %2°N")
            .arg(newPosition.x(), 0, 'f', 4)
            .arg(newPosition.y(), 0, 'f', 4));
@@ -1078,7 +1084,7 @@ void MainWindow::generateAndSendPlatformMotionData()
         simData->receiver = m_agent->getPlatformEntity()->id;
         simData->componentId = 1;
 
-        // 修复：创建motionData的深拷贝
+        // 创建motionData的深拷贝
         CData_Motion* motionDataCopy = new CData_Motion(motionData);
         simData->data = motionDataCopy;
         simData->length = sizeof(CData_Motion);
@@ -1099,4 +1105,41 @@ void MainWindow::generateAndSendPlatformMotionData()
     } catch(...) {
         addLog("生成平台机动数据时发生未知错误");
     }
+}
+
+void MainWindow::onToggleFileLogClicked()
+{
+    Logger& logger = Logger::getInstance();
+    bool currentState = logger.isFileOutputEnabled();
+
+    addLog(QString("当前文件输出状态: %1").arg(currentState ? "启用" : "禁用")); // 调试信息
+
+    // 切换状态
+    logger.enableFileOutput(!currentState);
+
+    // 验证状态是否真的改变了
+    bool newState = logger.isFileOutputEnabled();
+    addLog(QString("新的文件输出状态: %1").arg(newState ? "启用" : "禁用")); // 调试信息
+
+    // 更新按钮文本和样式
+    if (newState) {
+        // 现在启用了文件输出
+        m_toggleFileLogButton->setText("暂停文件日志");
+        m_toggleFileLogButton->setStyleSheet("background-color: #45b7d1; color: white;");
+        addLog("✓ 文件日志输出已启用");
+
+        // 显示当前日志文件路径
+        std::string logPath = logger.getCurrentLogFilePath();
+        if (!logPath.empty()) {
+            addLog(QString("日志文件: %1").arg(QString::fromStdString(logPath)));
+        }
+    } else {
+        // 现在禁用了文件输出
+        m_toggleFileLogButton->setText("恢复文件日志");
+        m_toggleFileLogButton->setStyleSheet("background-color: #95a5a6; color: white;");
+        addLog("⏸ 文件日志输出已暂停");
+    }
+
+    // 强制刷新按钮显示
+    m_toggleFileLogButton->update();
 }

@@ -485,7 +485,7 @@ void SeaChartWidget::setSonarRangeVisible(int sonarId, bool visible)
     }
 }
 
-// *** 检查并修复声纳范围状态 ***
+// *** 声纳范围状态 ***
 void SeaChartWidget::validateSonarRanges()
 {
     bool needUpdate = false;
@@ -677,7 +677,7 @@ void SeaChartWidget::drawPlatform(QPainter& painter, const ChartPlatform& platfo
 {
     QPoint screenPos = geoToScreen(platform.position);
 
-    // 修复：扩大可见区域检查范围，避免边缘目标被过滤
+    // 扩大可见区域检查范围，避免边缘目标被过滤
     QRect visibleRect = rect().adjusted(-PLATFORM_SIZE*2, -PLATFORM_SIZE*2,
                                        PLATFORM_SIZE*2, PLATFORM_SIZE*2);
     if (!visibleRect.contains(screenPos)) {
@@ -729,7 +729,7 @@ void SeaChartWidget::drawPlatform(QPainter& painter, const ChartPlatform& platfo
         painter.setPen(pen);
         painter.setBrush(brush);
 
-        // 修复：使用更大更明显的目标图标
+        // 使用更大更明显的目标图标
         QPolygon targetShape;
         int size = PLATFORM_SIZE + 2; // 比本艇稍大一点
         targetShape << QPoint(0, -size)
@@ -782,7 +782,7 @@ void SeaChartWidget::drawPlatform(QPainter& painter, const ChartPlatform& platfo
 
 void SeaChartWidget::drawSonarRanges(QPainter& painter)
 {
-    // *** 关键修复：增强本艇位置验证 ***
+    // *** 增强本艇位置验证 ***
     if (!m_ownShip) {
         qDebug() << "Warning: No own ship found for sonar ranges drawing";
         return;
@@ -791,7 +791,7 @@ void SeaChartWidget::drawSonarRanges(QPainter& painter)
     QPointF ownShipPos = m_ownShip->position;
     double ownShipHeading = m_ownShip->heading;
 
-    // *** 修复核心：验证本艇位置的有效性 ***
+    // *** 验证本艇位置的有效性 ***
     if (qAbs(ownShipPos.x()) < 0.001 && qAbs(ownShipPos.y()) < 0.001) {
         qDebug() << "Warning: Own ship position is (0,0), skipping sonar ranges drawing";
         qDebug() << "Own ship details: id=" << m_ownShip->id
@@ -816,7 +816,7 @@ void SeaChartWidget::drawSonarRanges(QPainter& painter)
             continue;
         }
 
-        // *** 修复：再次验证位置有效性 ***
+        // *** 再次验证位置有效性 ***
         if (qAbs(ownShipPos.x()) < 0.001 && qAbs(ownShipPos.y()) < 0.001) {
             qDebug() << "Critical: Own ship position became (0,0) during sonar range drawing!";
             break; // 立即停止绘制
@@ -1287,7 +1287,7 @@ void SeaChartWidget::onAutoGenerateTargets()
     // 生成3-5个目标
     int targetCount = 3 + (qrand() % 3);
 
-    // 修复：根据当前缩放级别调整生成距离
+    // 根据当前缩放级别调整生成距离
     double maxViewDistance = m_chartScale * qMin(width(), height()) / 4; // 屏幕1/4范围
     double minDistance = qMax(2000.0, maxViewDistance * 0.1);   // 最小2公里或视图范围的10%
     double maxDistance = qMax(8000.0, maxViewDistance * 0.8);   // 最大8公里或视图范围的80%
@@ -1298,11 +1298,11 @@ void SeaChartWidget::onAutoGenerateTargets()
     QVector<ChartPlatform> newTargets; // 收集新生成的目标
 
     for (int i = 0; i < targetCount; i++) {
-        // 修复：调整生成距离范围，确保在可视范围内
+        // 调整生成距离范围，确保在可视范围内
         double distance = minDistance + (qrand() % static_cast<int>(maxDistance - minDistance));
         double bearing = (qrand() % 360) * M_PI / 180.0; // 转换为弧度
 
-        // 修复：正确的坐标计算
+        // 正确的坐标计算
         // 注意：经度方向是x轴（东向为正），纬度方向是y轴（北向为正）
         double deltaLat = (distance * cos(bearing)) / 111320.0;  // 北向分量
         double deltaLon = (distance * sin(bearing)) / 111320.0;  // 东向分量
@@ -1337,7 +1337,7 @@ void SeaChartWidget::onAutoGenerateTargets()
 
     qDebug() << "Auto generated" << targetCount << "target ships";
 
-    // 修复：生成后自动调整视图以显示所有目标
+    // 生成后自动调整视图以显示所有目标
     if (!newTargets.isEmpty()) {
         // 延迟调整视图，确保平台已被添加
         QTimer::singleShot(100, this, [this]() {
@@ -1366,7 +1366,7 @@ void SeaChartWidget::generateAndSendPropagatedSoundData()
     }
 }
 
-// 强制验证并修复本艇位置
+// 本艇位置
 bool SeaChartWidget::isValidPosition(const QPointF& pos) const
 {
     // 检查是否为(0,0)
@@ -1390,7 +1390,7 @@ bool SeaChartWidget::isValidPosition(const QPointF& pos) const
     return true;
 }
 
-// === 实现2：本艇位置验证和修复函数 ===
+// === 本艇位置验证和修复函数 ===
 void SeaChartWidget::validateAndFixOwnShipPosition()
 {
     if (!m_ownShip) {
@@ -1566,7 +1566,7 @@ void SeaChartWidget::fitToTargets()
     double latRange = maxLat - minLat;
     double maxRangeMeters = qMax(lonRange * 111320.0, latRange * 111320.0); // 转换为米
 
-    // 修复：确保有最小显示范围
+    // 确保有最小显示范围
     maxRangeMeters = qMax(maxRangeMeters, 5000.0); // 最小5公里范围
 
     double newScale = maxRangeMeters / (qMin(width(), height()) * 0.8); // 留20%边距

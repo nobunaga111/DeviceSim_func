@@ -311,7 +311,7 @@ int64 DeviceModelAgent::getEndTime()
 
 CSimIntegrationLogger* DeviceModelAgent::getLogger()
 {
-    // 返回空指针，如果需要日志功能可以在这里实现
+    // 返回空指针，如需日志功能可以在这加
     return nullptr;
 }
 

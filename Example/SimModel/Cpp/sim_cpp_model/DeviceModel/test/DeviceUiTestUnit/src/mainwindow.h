@@ -64,6 +64,7 @@ private slots:
 
     //========== 日志功能 ==========//
     void onClearLogClicked();
+    void onToggleFileLogClicked();
 
     //========== 定时更新功能 ==========//
     void onUpdateSonarStatus();
@@ -141,6 +142,7 @@ private:
     //========== 日志面板 ==========//
     QTextEdit* m_logTextEdit;                       // 日志文本编辑框
     QPushButton* m_clearLogButton;                  // 清除日志按钮
+    QPushButton* m_toggleFileLogButton;             // 切换文件日志按钮
 
     //========== 模型组件 ==========//
     CSimComponentBase* m_component;                 // 声纳组件

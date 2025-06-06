@@ -9,26 +9,51 @@ Logger& Logger::getInstance() {
 }
 
 void Logger::initialize(const std::string& logFilePath, bool enableConsole) {
+    // 保存当前用户设置的文件输出状态
+    bool userFileOutputSetting = m_fileOutputEnabled;
+    bool wasInitialized = m_initialized;
+
     m_enableConsole = enableConsole;
     m_logFilePath = logFilePath;
 
     if (!logFilePath.empty()) {
-        m_logFile.open(logFilePath, std::ios::out | std::ios::app);
-        if (m_logFile.is_open()) {
-            m_enableFile = true;
-            m_logFile << "\n========== Logger Initialized at " << getTimestamp() << " ==========\n";
-            m_logFile.flush();
+        // 如果文件已经打开且是同一个文件，不重新打开
+        if (m_logFile.is_open() && m_logFilePath == logFilePath) {
+            std::cout << "Logger: Same log file already open, keeping current state" << std::endl;
+        } else {
+            // 关闭旧文件，打开新文件
+            if (m_logFile.is_open()) {
+                m_logFile.close();
+            }
+
+            m_logFile.open(logFilePath, std::ios::out | std::ios::app);
+            if (m_logFile.is_open()) {
+                m_enableFile = true;
+                m_logFile << "\n========== Logger " << (wasInitialized ? "Re-" : "") << "Initialized at " << getTimestamp() << " ==========\n";
+                m_logFile.flush();
+            }
         }
     }
 
     m_initialized = true;
 
+    // 如果之前已经初始化过，保持用户的文件输出设置
+    if (wasInitialized) {
+        m_fileOutputEnabled = userFileOutputSetting;
+        std::cout << "Logger re-initialized, preserved user file output setting: "
+                  << (m_fileOutputEnabled ? "ENABLED" : "DISABLED") << std::endl;
+    } else {
+        // 首次初始化，默认启用文件输出
+        m_fileOutputEnabled = true;
+        std::cout << "Logger first-time initialized, file output: ENABLED" << std::endl;
+    }
+
     if (m_enableConsole) {
-        std::cout << "Logger initialized. Console: " << (enableConsole ? "ON" : "OFF")
-                  << ", File: " << (m_enableFile ? "ON" : "OFF") << std::endl;
+        std::cout << "Logger state: Console=" << (enableConsole ? "ON" : "OFF")
+                  << ", File=" << (m_enableFile ? "ON" : "OFF")
+                  << ", FileOutput=" << (m_fileOutputEnabled ? "ENABLED" : "DISABLED") << std::endl;
     }
 }
-
 void Logger::shutdown() {
     if (m_enableFile && m_logFile.is_open()) {
         m_logFile << "========== Logger Shutdown at " << getTimestamp() << " ==========\n";
@@ -127,8 +152,52 @@ void Logger::writeLog(LogLevel level, const char* function, int line, const std:
         std::cout << logLine << std::endl;
     }
 
-    // 输出到文件
-    if (m_enableFile && m_logFile.is_open()) {
+    // 输出到文件 - 明显的状态检查
+    std::cout << "DEBUG writeLog: m_fileOutputEnabled=" << m_fileOutputEnabled
+              << ", m_enableFile=" << m_enableFile
+              << ", file_open=" << m_logFile.is_open() << std::endl;
+
+    if (m_fileOutputEnabled && m_enableFile && m_logFile.is_open()) {
         m_logFile << logLine << std::endl;
+        m_logFile.flush();
+        std::cout << "DEBUG: Log written to file" << std::endl;
+    } else {
+        std::cout << "DEBUG: Log NOT written to file" << std::endl;
     }
+}
+
+void Logger::enableFileOutput(bool enable) {
+    std::cout << "Logger::enableFileOutput called with: " << (enable ? "true" : "false") << std::endl; // 调试输出
+
+    m_fileOutputEnabled = enable;
+
+    if (!enable) {
+        // 暂停文件输出
+        if (m_enableFile && m_logFile.is_open()) {
+            m_logFile << "========== File Output Paused at " << getTimestamp() << " ==========\n";
+            m_logFile.flush();
+        }
+        std::cout << "File output disabled" << std::endl; // 调试输出
+    } else {
+        // 恢复文件输出
+        if (m_enableFile && m_logFile.is_open()) {
+            m_logFile << "========== File Output Resumed at " << getTimestamp() << " ==========\n";
+            m_logFile.flush();
+        }
+        std::cout << "File output enabled" << std::endl; // 调试输出
+    }
+}
+
+bool Logger::isFileOutputEnabled() const {
+    bool result = m_fileOutputEnabled;
+    std::cout << "Logger::isFileOutputEnabled returns: " << (result ? "true" : "false") << std::endl; // 调试输出
+    return result;
+}
+
+std::string Logger::getCurrentLogFilePath() const {
+    return m_logFilePath;
+}
+
+bool Logger::isInitialized() const {
+    return m_initialized;
 }

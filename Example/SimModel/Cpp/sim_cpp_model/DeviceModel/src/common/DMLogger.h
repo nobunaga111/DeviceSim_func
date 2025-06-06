@@ -57,6 +57,20 @@ public:
     // 检查是否启用了某个级别的日志
     bool isEnabled(LogLevel level) const;
 
+
+
+    // 启用/禁用文件输出
+    void enableFileOutput(bool enable);
+
+    // 检查文件输出是否启用
+    bool isFileOutputEnabled() const;
+
+    // 获取当前日志文件路径
+    std::string getCurrentLogFilePath() const;
+
+    // 检查是否已初始化
+    bool isInitialized() const;
+
 private:
     Logger() = default;
     ~Logger();
@@ -77,6 +91,9 @@ private:
     // 格式化字符串
     template<typename... Args>
     std::string formatString(const char* format, Args... args);
+
+
+    bool m_fileOutputEnabled = true;  // 文件输出开关
 
 private:
     LogLevel m_logLevel = LogLevel::DEBUG;

@@ -39,10 +39,12 @@ DeviceModel::DeviceModel()
     m_platformMotion.isPending = false;
 
     // 生成带时间戳的日志文件名     // 配置 DMLogger 同时输出到控制台和文件
-    QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
-    QString logFileName = QString("device_model_%1.log").arg(timestamp);
-
-    Logger::getInstance().initialize(logFileName.toStdString(), true); // 同时启用控制台和文件
+    // 只在 Logger 未初始化时才初始化
+     if (!Logger::getInstance().isInitialized()) {  // 需要添加这个方法
+         QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
+         QString logFileName = QString("device_model_%1.log").arg(timestamp);
+         Logger::getInstance().initialize(logFileName.toStdString(), true);
+     }
 
     LOG_INFO("Sonar model created with multi-target equation calculation capability");
 
