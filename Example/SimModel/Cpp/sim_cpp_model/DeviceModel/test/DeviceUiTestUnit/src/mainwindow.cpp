@@ -1109,37 +1109,27 @@ void MainWindow::generateAndSendPlatformMotionData()
 
 void MainWindow::onToggleFileLogClicked()
 {
-    Logger& logger = Logger::getInstance();
-    bool currentState = logger.isFileOutputEnabled();
+    m_fileLogEnabled = !m_fileLogEnabled;
 
-    addLog(QString("当前文件输出状态: %1").arg(currentState ? "启用" : "禁用")); // 调试信息
+    // 设置两个Logger实例
+    Logger::getInstance().enableFileOutput(m_fileLogEnabled);
 
-    // 切换状态
-    logger.enableFileOutput(!currentState);
+    // 通过 DeviceModel 设置它的 Logger
+    if (m_component) {
+        DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
+        if (deviceModel) {
+            deviceModel->setFileLogEnabled(m_fileLogEnabled);
+        }
+    }
 
-    // 验证状态是否真的改变了
-    bool newState = logger.isFileOutputEnabled();
-    addLog(QString("新的文件输出状态: %1").arg(newState ? "启用" : "禁用")); // 调试信息
-
-    // 更新按钮文本和样式
-    if (newState) {
-        // 现在启用了文件输出
+    // 更新按钮
+    if (m_fileLogEnabled) {
         m_toggleFileLogButton->setText("暂停文件日志");
         m_toggleFileLogButton->setStyleSheet("background-color: #45b7d1; color: white;");
         addLog("✓ 文件日志输出已启用");
-
-        // 显示当前日志文件路径
-        std::string logPath = logger.getCurrentLogFilePath();
-        if (!logPath.empty()) {
-            addLog(QString("日志文件: %1").arg(QString::fromStdString(logPath)));
-        }
     } else {
-        // 现在禁用了文件输出
         m_toggleFileLogButton->setText("恢复文件日志");
         m_toggleFileLogButton->setStyleSheet("background-color: #95a5a6; color: white;");
         addLog("⏸ 文件日志输出已暂停");
     }
-
-    // 强制刷新按钮显示
-    m_toggleFileLogButton->update();
 }

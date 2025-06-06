@@ -859,3 +859,7 @@ std::map<int, std::vector<DeviceModel::TargetEquationResult>> DeviceModel::getAl
 {
     return m_multiTargetCache.multiTargetEquationResults;
 }
+
+void DeviceModel::setFileLogEnabled(bool enabled) {
+    Logger::getInstance().enableFileOutput(enabled);
+}

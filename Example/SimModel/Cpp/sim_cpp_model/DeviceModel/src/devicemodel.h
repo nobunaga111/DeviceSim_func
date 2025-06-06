@@ -79,6 +79,7 @@ public:
     std::map<int, std::vector<TargetEquationResult>> getAllSonarTargetsResults();
 
 
+    void setFileLogEnabled(bool enabled);
 
 
 private:

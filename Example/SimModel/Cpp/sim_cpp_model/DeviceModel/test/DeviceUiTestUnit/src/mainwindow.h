@@ -161,6 +161,9 @@ private:
     //========== 声纳配置信息 ==========//
     static const QStringList SONAR_NAMES;          // 声纳名称列表
     static const QList<QColor> SONAR_COLORS;       // 声纳颜色列表
+
+
+    bool m_fileLogEnabled = true;  // 文件日志是否启用
 };
 
 #endif // MAINWINDOW_H

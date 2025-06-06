@@ -139,6 +139,9 @@ std::string Logger::getTimestamp() const {
 }
 
 void Logger::writeLog(LogLevel level, const char* function, int line, const std::string& message) {
+
+
+
     std::stringstream logStream;
     logStream << "[" << getTimestamp() << "] "
               << "[" << getLevelString(level) << "] "
@@ -153,9 +156,10 @@ void Logger::writeLog(LogLevel level, const char* function, int line, const std:
     }
 
     // 输出到文件 - 明显的状态检查
-    std::cout << "DEBUG writeLog: m_fileOutputEnabled=" << m_fileOutputEnabled
-              << ", m_enableFile=" << m_enableFile
-              << ", file_open=" << m_logFile.is_open() << std::endl;
+    std::cout << "DEBUG writeLog: this=" << this
+                  << ", m_fileOutputEnabled=" << this->m_fileOutputEnabled
+                  << ", m_enableFile=" << this->m_enableFile
+                  << ", file_open=" << (this->m_logFile.is_open() ? 1 : 0) << std::endl;
 
     if (m_fileOutputEnabled && m_enableFile && m_logFile.is_open()) {
         m_logFile << logLine << std::endl;
@@ -167,9 +171,18 @@ void Logger::writeLog(LogLevel level, const char* function, int line, const std:
 }
 
 void Logger::enableFileOutput(bool enable) {
-    std::cout << "Logger::enableFileOutput called with: " << (enable ? "true" : "false") << std::endl; // 调试输出
+
+
+    std::cout << "=== enableFileOutput DEBUG ===" << std::endl;
+    std::cout << "Before: m_fileOutputEnabled = " << m_fileOutputEnabled << std::endl;
+    std::cout << "Setting to: " << enable << std::endl;
 
     m_fileOutputEnabled = enable;
+
+    std::cout << "After: m_fileOutputEnabled = " << m_fileOutputEnabled << std::endl;
+    std::cout << "=== END DEBUG ===" << std::endl;
+
+
 
     if (!enable) {
         // 暂停文件输出
@@ -190,7 +203,7 @@ void Logger::enableFileOutput(bool enable) {
 
 bool Logger::isFileOutputEnabled() const {
     bool result = m_fileOutputEnabled;
-    std::cout << "Logger::isFileOutputEnabled returns: " << (result ? "true" : "false") << std::endl; // 调试输出
+    std::cout << "isFileOutputEnabled() called, returning: " << result << std::endl;
     return result;
 }
 
