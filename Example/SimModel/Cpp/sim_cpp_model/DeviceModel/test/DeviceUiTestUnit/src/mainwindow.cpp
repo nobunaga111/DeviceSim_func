@@ -181,23 +181,32 @@ void MainWindow::createControlPanel()
     m_controlPanel = new QWidget();
     m_controlPanel->setMinimumWidth(400);
     m_controlPanel->setMaximumWidth(500);
-    // 创建阈值配置面板
-    createThresholdConfigPanel();
-    // 将阈值配置组添加到控制布局中
-    controlLayout->addWidget(m_thresholdConfigGroup);
+
+    // 创建并保存布局
+    m_controlPanelLayout = new QVBoxLayout(m_controlPanel);
+    m_controlPanelLayout->setSpacing(10);
+    m_controlPanelLayout->setContentsMargins(10, 10, 10, 10);
 
     // 右侧分割器
     m_rightSplitter->addWidget(m_controlPanel);
-
-    // 控制面板将在createSonarStatusPanel中填充内容
 }
 
 void MainWindow::createSonarStatusPanel()
 {
-    // 创建控制面板的主布局
-    QVBoxLayout* controlLayout = new QVBoxLayout(m_controlPanel);
-    controlLayout->setSpacing(10);
-    controlLayout->setContentsMargins(10, 10, 10, 10);
+    // 获取已创建的控制面板布局
+    QVBoxLayout* controlLayout = qobject_cast<QVBoxLayout*>(m_controlPanel->layout());
+
+    // 如果布局不存在，创建一个
+    if (!controlLayout) {
+        controlLayout = new QVBoxLayout(m_controlPanel);
+        controlLayout->setSpacing(10);
+        controlLayout->setContentsMargins(10, 10, 10, 10);
+    }
+
+//    // 创建控制面板的主布局
+//    QVBoxLayout* controlLayout = new QVBoxLayout(m_controlPanel);
+//    controlLayout->setSpacing(10);
+//    controlLayout->setContentsMargins(10, 10, 10, 10);
 
 
 

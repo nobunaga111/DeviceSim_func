@@ -199,7 +199,7 @@ private:
     //
     bool m_fileLogEnabled = true;  // 文件日志是否启用
 
-
+    QVBoxLayout* m_controlPanelLayout;  // 控制面板布局
 };
 
 #endif // MAINWINDOW_H
