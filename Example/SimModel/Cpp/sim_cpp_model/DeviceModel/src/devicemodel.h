@@ -70,12 +70,7 @@ public:
                                targetDistance(0.0), targetBearing(0.0), isValid(false) {}
     };
 
-    /**
-     * @brief 获取指定声纳的所有目标计算结果
-     * @param sonarID 声纳ID (0-3)
-     * @return 该声纳的所有目标计算结果
-     */
-    std::vector<TargetEquationResult> getSonarTargetsResults(int sonarID);
+
 
     /**
      * @brief 获取所有声纳的所有目标计算结果
@@ -83,31 +78,8 @@ public:
      */
     std::map<int, std::vector<TargetEquationResult>> getAllSonarTargetsResults();
 
-    /**
-     * @brief 获取指定声纳可探测到的目标数量
-     * @param sonarID 声纳ID (0-3)
-     * @return 可探测到的目标数量
-     */
-    int getSonarDetectedTargetCount(int sonarID);
 
-    /**
-     * @brief 设置指定声纳的DI计算参数
-     * @param sonarID 声纳ID
-     * @param frequency_khz 频率(kHz)
-     * @param offset 偏移量
-     */
-    void setDIParameters(int sonarID, double frequency_khz, double offset);
 
-    /**
-     * @brief 检查指定声纳的数据是否有效且在时效内
-     * @param sonarID 声纳ID
-     * @return true if data is valid and recent
-     */
-    bool isEquationDataValid(int sonarID);
-
-    // *** 兼容性接口 - 用于现有代码 ***
-    double getSonarEquationResult(int sonarID);
-    std::map<int, double> getAllSonarEquationResults();
 
 private:
     /**
@@ -122,17 +94,17 @@ private:
      */
     void handleSonarInitialization(CSimMessage* simMessage);
 
-    /**
-     * @brief 处理平台自噪声数据
-     * @param simData 接收到的平台自噪声数据
-     */
-    void handlePlatformSelfSound(CSimData* simData);
+//    /**
+//     * @brief 处理平台自噪声数据
+//     * @param simData 接收到的平台自噪声数据
+//     */
+//    void handlePlatformSelfSound(CSimData* simData);
 
-    /**
-     * @brief 处理传播声音数据
-     * @param simMessage 接收到的传播声音消息
-     */
-    void handlePropagatedSound(CSimMessage* simMessage);
+//    /**
+//     * @brief 处理传播声音数据
+//     * @param simMessage 接收到的传播声音消息
+//     */
+//    void handlePropagatedSound(CSimMessage* simMessage);
 
     /**
      * @brief 处理平台机动信息
@@ -146,14 +118,6 @@ private:
     void updateSonarState();
 
     void initDetectionTrack();
-
-    /**
-      * @brief 根据本艇航向计算声纳的绝对探测角度范围
-      * @param sonarID 声纳ID
-      * @param ownShipHeading 本艇航向角度
-      * @return 绝对角度范围 (起始角度, 结束角度)
-      */
-     std::pair<float, float> calculateAbsoluteSonarRange(int sonarID, float ownShipHeading);
 
      /**
       * @brief 获取声纳的相对探测角度范围（相对于本艇艏向）
@@ -261,12 +225,7 @@ private:
      */
     bool isTargetInSonarRange(int sonarID, float targetBearing, float targetDistance);
 
-    /**
-     * @brief 获取声纳的探测范围角度
-     * @param sonarID 声纳ID
-     * @return 探测角度范围 (起始角度, 结束角度)
-     */
-    std::pair<float, float> getSonarDetectionAngleRange(int sonarID);
+
 
 private:
     CSimModelAgentBase* m_agent;               // 代理对象

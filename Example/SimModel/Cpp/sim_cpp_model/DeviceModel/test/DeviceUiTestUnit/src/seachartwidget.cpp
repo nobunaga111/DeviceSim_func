@@ -474,7 +474,6 @@ void SeaChartWidget::setSonarRangeVisible(int sonarId, bool visible)
         if (range.sonarId == sonarId) {
             range.isVisible = visible;
             found = true;
-            break;
         }
     }
 

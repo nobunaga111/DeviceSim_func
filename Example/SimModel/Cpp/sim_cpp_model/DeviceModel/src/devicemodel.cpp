@@ -193,7 +193,22 @@ void DeviceModel::onMessage(CSimMessage* simMessage)
              topic == MSG_PropagatedCommPulseSound ||
              topic == MSG_PropagatedInstantSound) {
         // 处理传播声音数据
-        handlePropagatedSound(simMessage);
+//        handlePropagatedSound(simMessage);
+        std::string topic = simMessage->topic;
+
+        // 使用新的多目标处理方法
+        if (topic == MSG_PropagatedContinuousSound) {
+            updateMultiTargetPropagatedSoundCache(simMessage);
+        }
+
+        else if (topic == MSG_PropagatedActivePulseSound) {
+            const CMsg_PropagatedActivePulseSoundListStruct* sounds = reinterpret_cast<const CMsg_PropagatedActivePulseSoundListStruct*>(simMessage->data);
+            std::cout << __FUNCTION__ << ":" << __LINE__ << " Received active pulse sound data, count: " << sounds->propagateActivePulseList.size() << std::endl;
+        }
+        else if (topic == MSG_PropagatedCommPulseSound) {
+            const CMsg_PropagatedCommPulseSoundListStruct* sounds = reinterpret_cast<const CMsg_PropagatedCommPulseSoundListStruct*>(simMessage->data);
+            std::cout << __FUNCTION__ << ":" << __LINE__ << " Received comm pulse sound data, count: " << sounds->propagatedCommList.size() << std::endl;
+        }
     }
     else if (topic == MSG_EnvironmentNoiseToSonar) {
         // 处理环境噪声数据
@@ -244,44 +259,44 @@ void DeviceModel::handleSonarControlOrder(CSimMessage* simMessage)
     }
 }
 
-// 处理传播声音数据
-void DeviceModel::handlePropagatedSound(CSimMessage* simMessage)
-{
-    std::string topic = simMessage->topic;
+//// 处理传播声音数据
+//void DeviceModel::handlePropagatedSound(CSimMessage* simMessage)
+//{
+//    std::string topic = simMessage->topic;
 
-    // 使用新的多目标处理方法
-    if (topic == MSG_PropagatedContinuousSound) {
-        updateMultiTargetPropagatedSoundCache(simMessage);
-    }
-    // 继续支持原有方法用于兼容性
-    else if (topic == MSG_PropagatedActivePulseSound) {
-        const CMsg_PropagatedActivePulseSoundListStruct* sounds =
-            reinterpret_cast<const CMsg_PropagatedActivePulseSoundListStruct*>(simMessage->data);
+//    // 使用新的多目标处理方法
+//    if (topic == MSG_PropagatedContinuousSound) {
+//        updateMultiTargetPropagatedSoundCache(simMessage);
+//    }
 
-        std::cout << __FUNCTION__ << ":" << __LINE__
-                  << " Received active pulse sound data, count: "
-                  << sounds->propagateActivePulseList.size() << std::endl;
-    }
-    else if (topic == MSG_PropagatedCommPulseSound) {
-        const CMsg_PropagatedCommPulseSoundListStruct* sounds =
-            reinterpret_cast<const CMsg_PropagatedCommPulseSoundListStruct*>(simMessage->data);
+//    else if (topic == MSG_PropagatedActivePulseSound) {
+//        const CMsg_PropagatedActivePulseSoundListStruct* sounds =
+//            reinterpret_cast<const CMsg_PropagatedActivePulseSoundListStruct*>(simMessage->data);
 
-        std::cout << __FUNCTION__ << ":" << __LINE__
-                  << " Received comm pulse sound data, count: "
-                  << sounds->propagatedCommList.size() << std::endl;
-    }
-}
+//        std::cout << __FUNCTION__ << ":" << __LINE__
+//                  << " Received active pulse sound data, count: "
+//                  << sounds->propagateActivePulseList.size() << std::endl;
+//    }
+//    else if (topic == MSG_PropagatedCommPulseSound) {
+//        const CMsg_PropagatedCommPulseSoundListStruct* sounds =
+//            reinterpret_cast<const CMsg_PropagatedCommPulseSoundListStruct*>(simMessage->data);
 
-// 平台自噪声数据
-void DeviceModel::handlePlatformSelfSound(CSimData* simData)
-{
-    if (!simData->data)
-    {
-        return;
-    }
+//        std::cout << __FUNCTION__ << ":" << __LINE__
+//                  << " Received comm pulse sound data, count: "
+//                  << sounds->propagatedCommList.size() << std::endl;
+//    }
+//}
 
-    updatePlatformSelfSoundCache(simData);
-}
+//// 平台自噪声数据
+//void DeviceModel::handlePlatformSelfSound(CSimData* simData)
+//{
+//    if (!simData->data)
+//    {
+//        return;
+//    }
+
+//    updatePlatformSelfSoundCache(simData);
+//}
 
 void DeviceModel::step(int64 curTime, int32 step)
 {
@@ -318,7 +333,8 @@ void DeviceModel::step(int64 curTime, int32 step)
     CSimData* selfSoundData = m_agent->getSubscribeSimData(Data_PlatformSelfSound, platformId);
     if (selfSoundData) {
         LOG_INFOF("Retrieved platform self sound data with timestamp: %lld", selfSoundData->time);
-        handlePlatformSelfSound(selfSoundData);
+//        handlePlatformSelfSound(selfSoundData);
+        updatePlatformSelfSoundCache(selfSoundData);
     } else {
         LOG_WARN("Failed to retrieve platform self sound data in step()");
         LOG_WARNF("Topic: %s, PlatformId: %lld", Data_PlatformSelfSound, platformId);
@@ -534,6 +550,7 @@ void DeviceModel::updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage)
     }
 }
 
+// 平台自噪声数据
 void DeviceModel::updatePlatformSelfSoundCache(CSimData* simData)
 {
     if (!simData || !simData->data) {
@@ -845,110 +862,13 @@ bool DeviceModel::isTargetInSonarRange(int sonarID, float targetBearing, float t
     return inRange;
 }
 
-std::pair<float, float> DeviceModel::getSonarDetectionAngleRange(int sonarID)
-{
-    // 获取本艇当前航向
-    float ownShipHeading = 0.0f;
-    if (m_agent && m_agent->getPlatformEntity()) {
-        // 从平台机动信息获取航向
-        ownShipHeading = static_cast<float>(m_platformMotion.rotation);
-    }
-
-    return calculateAbsoluteSonarRange(sonarID, ownShipHeading);
-}
-
-// *** 公共接口实现 ***
-std::vector<DeviceModel::TargetEquationResult> DeviceModel::getSonarTargetsResults(int sonarID)
-{
-    auto it = m_multiTargetCache.multiTargetEquationResults.find(sonarID);
-    if (it != m_multiTargetCache.multiTargetEquationResults.end()) {
-        return it->second;
-    }
-    return std::vector<TargetEquationResult>();
-}
 
 std::map<int, std::vector<DeviceModel::TargetEquationResult>> DeviceModel::getAllSonarTargetsResults()
 {
     return m_multiTargetCache.multiTargetEquationResults;
 }
 
-int DeviceModel::getSonarDetectedTargetCount(int sonarID)
-{
-    auto it = m_multiTargetCache.multiTargetEquationResults.find(sonarID);
-    if (it != m_multiTargetCache.multiTargetEquationResults.end()) {
-        // 只统计有效结果的目标
-        int validCount = 0;
-        for (const auto& result : it->second) {
-            if (result.isValid) {
-                validCount++;
-            }
-        }
-        return validCount;
-    }
-    return 0;
-}
 
-void DeviceModel::setDIParameters(int sonarID, double frequency_khz, double offset)
-{
-    if (sonarID >= 0 && sonarID < 4) {
-        m_diParameters[sonarID] = {frequency_khz, offset};
-        LOG_INFOF("Updated DI parameters for sonar %d: f=%.1fkHz, offset=%.1f",
-                  sonarID, frequency_khz, offset);
-    } else {
-        LOG_WARNF("Invalid sonar ID for DI parameters: %d", sonarID);
-    }
-}
-
-bool DeviceModel::isEquationDataValid(int sonarID)
-{
-    int64 currentTime = QDateTime::currentMSecsSinceEpoch();
-
-    // 检查平台自噪声和环境噪声数据时效性
-    bool platformValid = (currentTime - m_multiTargetCache.lastPlatformSoundTime) <= DATA_UPDATE_INTERVAL_MS;
-    bool environmentValid = (currentTime - m_multiTargetCache.lastEnvironmentNoiseTime) <= DATA_UPDATE_INTERVAL_MS;
-
-    // 检查是否有目标数据
-    auto it = m_multiTargetCache.sonarTargetsData.find(sonarID);
-    bool hasTargets = (it != m_multiTargetCache.sonarTargetsData.end() && !it->second.empty());
-
-    return platformValid && environmentValid && hasTargets;
-}
-
-// *** 兼容性接口实现 ***
-double DeviceModel::getSonarEquationResult(int sonarID)
-{
-    auto results = getSonarTargetsResults(sonarID);
-    if (!results.empty()) {
-        // 返回第一个有效目标的结果
-        for (const auto& result : results) {
-            if (result.isValid) {
-                return result.equationResult;
-            }
-        }
-    }
-    return 0.0;
-}
-
-std::map<int, double> DeviceModel::getAllSonarEquationResults()
-{
-    std::map<int, double> compatResults;
-    auto allResults = getAllSonarTargetsResults();
-
-    for (const auto& sonarResults : allResults) {
-        int sonarID = sonarResults.first;
-        const auto& targets = sonarResults.second;
-
-        // 返回第一个有效目标的结果
-        for (const auto& target : targets) {
-            if (target.isValid) {
-                compatResults[sonarID] = target.equationResult;
-                break;
-            }
-        }
-    }
-
-    return compatResults;
-}
 
 std::pair<float, float> DeviceModel::getRelativeSonarAngleRange(int sonarID)
 {
@@ -973,24 +893,4 @@ std::pair<float, float> DeviceModel::getRelativeSonarAngleRange(int sonarID)
     }
 }
 
-std::pair<float, float> DeviceModel::calculateAbsoluteSonarRange(int sonarID, float ownShipHeading)
-{
-    auto relativeRange = getRelativeSonarAngleRange(sonarID);
-
-    // 将相对角度转换为绝对角度
-    float absoluteStart = relativeRange.first + ownShipHeading;
-    float absoluteEnd = relativeRange.second + ownShipHeading;
-
-    // 标准化角度到0-360度范围
-    auto normalizeAngle = [](float angle) -> float {
-        while (angle < 0) angle += 360.0f;
-        while (angle >= 360) angle -= 360.0f;
-        return angle;
-    };
-
-    absoluteStart = normalizeAngle(absoluteStart);
-    absoluteEnd = normalizeAngle(absoluteEnd);
-
-    return std::make_pair(absoluteStart, absoluteEnd);
-}
 
