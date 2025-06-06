@@ -57,7 +57,7 @@ DeviceModel::DeviceModel()
 //    }
 
     // 尝试加载配置文件，如果不存在则使用默认值
-    loadThresholdConfig("sonar_threshold_config.ini");
+    loadThresholdConfig("threshold_config.ini");
 
     LOG_INFO("声纳模型已创建，支持可配置探测阈值");
 }

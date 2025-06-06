@@ -127,11 +127,12 @@ void MainWindow::initializeUI()
     // 创建日志面板
     createLogPanel();
 
-    // 设置分割器比例
-    m_mainSplitter->setSizes({800, 600});  // 海图:控制面板 = 4:3
-    m_rightSplitter->setSizes({400, 200}); // 控制:日志 = 2:1
+    // 设置分割器比例 - 调整比例以适应更宽的控制面板
+    m_mainSplitter->setSizes({600, 1000});  // 海图:控制面板 = 600:1000
+    m_rightSplitter->setSizes({600, 200});  // 控制:日志 = 600:200
 }
 
+// 调整分割器比例
 void MainWindow::createMainLayout()
 {
     // 创建中央部件
@@ -179,8 +180,8 @@ void MainWindow::createControlPanel()
 {
     // 创建控制面板
     m_controlPanel = new QWidget();
-    m_controlPanel->setMinimumWidth(400);
-    m_controlPanel->setMaximumWidth(500);
+    m_controlPanel->setMinimumWidth(800);  // 从400到800
+    m_controlPanel->setMaximumWidth(1000); // 从500到1000
 
     // 创建并保存布局
     m_controlPanelLayout = new QVBoxLayout(m_controlPanel);
@@ -202,13 +203,6 @@ void MainWindow::createSonarStatusPanel()
         controlLayout->setSpacing(10);
         controlLayout->setContentsMargins(10, 10, 10, 10);
     }
-
-//    // 创建控制面板的主布局
-//    QVBoxLayout* controlLayout = new QVBoxLayout(m_controlPanel);
-//    controlLayout->setSpacing(10);
-//    controlLayout->setContentsMargins(10, 10, 10, 10);
-
-
 
     QPushButton* debugButton = new QPushButton("调试：显示所有目标");
     debugButton->setStyleSheet("background-color: lightcoral;");
@@ -238,18 +232,19 @@ void MainWindow::createSonarStatusPanel()
 
     controlLayout->addWidget(debugButton);
 
-
-    // === 声纳状态控制组 ===
+    // === 声纳状态控制组 - 改为两列布局 ===
     m_sonarStatusGroup = new QGroupBox("声纳阵列状态与控制");
     m_sonarStatusGroup->setStyleSheet(
         "QGroupBox { font-weight: bold; font-size: 12px; }"
         "QGroupBox::title { subcontrol-origin: margin; padding: 0 5px; }"
     );
 
-    QVBoxLayout* sonarLayout = new QVBoxLayout(m_sonarStatusGroup);
+    // 修改：使用网格布局替代垂直布局，实现两列排列
+    QGridLayout* sonarMainLayout = new QGridLayout(m_sonarStatusGroup);
+    sonarMainLayout->setSpacing(10);
 
-    // 为每个声纳创建控制组件
-    for (int sonarID = 0; sonarID < 4; sonarID++) {  // 确保只有4个声纳(0-3)
+    // 为每个声纳创建控制组件 - 按2列排列
+    for (int sonarID = 0; sonarID < 4; sonarID++) {
         QFrame* sonarFrame = new QFrame();
         sonarFrame->setFrameStyle(QFrame::Box | QFrame::Raised);
         sonarFrame->setStyleSheet("QFrame { border: 1px solid gray; border-radius: 5px; padding: 5px; }");
@@ -262,7 +257,6 @@ void MainWindow::createSonarStatusPanel()
         // 声纳名称和启用开关
         control.nameLabel = new QLabel(SONAR_NAMES[sonarID]);
         control.nameLabel->setStyleSheet("font-weight: bold; font-size: 14px; color: " + SONAR_COLORS[sonarID].name() + ";");
-
         frameLayout->addWidget(control.nameLabel, 0, 0, 1, 2);
 
         control.enableCheckBox = new QCheckBox("启用");
@@ -304,50 +298,55 @@ void MainWindow::createSonarStatusPanel()
         frameLayout->addWidget(control.equationResultLabel, 4, 1, 1, 2);
 
         m_sonarControls[sonarID] = control;
-        sonarLayout->addWidget(sonarFrame);
+
+        // 计算网格位置：2列排列
+        int row = sonarID / 2;    // 行号：0,0,1,1
+        int col = sonarID % 2;    // 列号：0,1,0,1
+        sonarMainLayout->addWidget(sonarFrame, row, col);
     }
 
     controlLayout->addWidget(m_sonarStatusGroup);
 
+    // === 创建水平布局容器放置系统状态和声纳方程结果 ===
+    QHBoxLayout* horizontalStatsLayout = new QHBoxLayout();
+
     // === 系统状态组 ===
     m_systemStatusGroup = new QGroupBox("系统状态信息");
     m_systemStatusGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 12px; }");
+    m_systemStatusGroup->setMinimumWidth(350); // 设置最小宽度
 
     QGridLayout* systemLayout = new QGridLayout(m_systemStatusGroup);
 
     // 平台位置
     systemLayout->addWidget(new QLabel("平台位置:"), 0, 0);
     m_platformPositionLabel = new QLabel("126.56°E, 56.65°N");
-//    m_platformPositionLabel->setStyleSheet("color: blue; font-family: monospace;");
     m_platformPositionLabel->setStyleSheet("color: blue; font-family: monospace; font-size: 12px;");
     systemLayout->addWidget(m_platformPositionLabel, 0, 1);
 
     // 目标数量
     systemLayout->addWidget(new QLabel("目标数量:"), 1, 0);
     m_targetCountLabel = new QLabel("0");
-//    m_targetCountLabel->setStyleSheet("color: red; font-weight: bold;");
     m_targetCountLabel->setStyleSheet("color: red; font-weight: bold; font-size: 14px;");
     systemLayout->addWidget(m_targetCountLabel, 1, 1);
 
     // 数据状态
     systemLayout->addWidget(new QLabel("数据状态:"), 2, 0);
     m_dataStatusLabel = new QLabel("初始化中...");
-//    m_dataStatusLabel->setStyleSheet("color: orange;");
     m_dataStatusLabel->setStyleSheet("color: orange; font-size: 12px;");
     systemLayout->addWidget(m_dataStatusLabel, 2, 1);
 
     // 仿真时间
     systemLayout->addWidget(new QLabel("仿真时间:"), 3, 0);
     m_simulationTimeLabel = new QLabel("00:00:00");
-//    m_simulationTimeLabel->setStyleSheet("color: green; font-family: monospace;");
     m_simulationTimeLabel->setStyleSheet("color: green; font-family: monospace; font-size: 14px;");
     systemLayout->addWidget(m_simulationTimeLabel, 3, 1);
 
-    controlLayout->addWidget(m_systemStatusGroup);
+    horizontalStatsLayout->addWidget(m_systemStatusGroup);
 
     // === 声纳方程结果组 ===
     m_equationResultsGroup = new QGroupBox("声纳方程计算结果");
     m_equationResultsGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 12px; }");
+    m_equationResultsGroup->setMinimumWidth(400); // 设置最小宽度
 
     QVBoxLayout* resultsLayout = new QVBoxLayout(m_equationResultsGroup);
 
@@ -367,7 +366,7 @@ void MainWindow::createSonarStatusPanel()
 
     // 结果显示区域
     m_equationResultsDisplay = new QTextEdit();
-    m_equationResultsDisplay->setMaximumHeight(200);
+    m_equationResultsDisplay->setMaximumHeight(180); // 稍微减小高度
     m_equationResultsDisplay->setReadOnly(true);
     m_equationResultsDisplay->setStyleSheet(
         "QTextEdit { font-family: monospace; font-size: 10px; background-color: #f0f0f0; }"
@@ -376,7 +375,10 @@ void MainWindow::createSonarStatusPanel()
 
     resultsLayout->addWidget(m_equationResultsDisplay);
 
-    controlLayout->addWidget(m_equationResultsGroup);
+    horizontalStatsLayout->addWidget(m_equationResultsGroup);
+
+    // 将水平布局添加到主布局
+    controlLayout->addLayout(horizontalStatsLayout);
 
     // 阈值配置面板（controlLayout在此作用域内有效）
     createThresholdConfigPanel();
@@ -1210,7 +1212,7 @@ void MainWindow::createThresholdConfigPanel()
     separator->setFrameShadow(QFrame::Sunken);
     thresholdLayout->addWidget(separator);
 
-    // 各声纳独立阈值设置
+    // 各声纳独立阈值设置 - 改为2行2列布局
     QLabel* individualLabel = new QLabel("各声纳独立阈值:");
     individualLabel->setStyleSheet("font-weight: bold; color: blue;");
     thresholdLayout->addWidget(individualLabel);
@@ -1220,12 +1222,27 @@ void MainWindow::createThresholdConfigPanel()
     for (int sonarID = 0; sonarID < 4; sonarID++) {
         SonarThresholdWidget thresholdWidget;
 
+        // 计算网格位置：2列排列
+        int row = sonarID / 2;    // 行号：0,0,1,1
+        int col = sonarID % 2;    // 列号：0,1,0,1
+
+        // 为每个声纳创建一个容器框架
+        QFrame* thresholdFrame = new QFrame();
+        thresholdFrame->setFrameStyle(QFrame::Box);
+        thresholdFrame->setStyleSheet("QFrame { border: 1px solid lightgray; border-radius: 3px; padding: 3px; }");
+
+        QVBoxLayout* frameLayout = new QVBoxLayout(thresholdFrame);
+        frameLayout->setSpacing(2);
+
         // 声纳名称标签
-        thresholdWidget.nameLabel = new QLabel(SONAR_NAMES[sonarID] + ":");
-        thresholdWidget.nameLabel->setStyleSheet("color: " + SONAR_COLORS[sonarID].name() + ";");
-        sonarThresholdLayout->addWidget(thresholdWidget.nameLabel, sonarID, 0);
+        thresholdWidget.nameLabel = new QLabel(SONAR_NAMES[sonarID]);
+        thresholdWidget.nameLabel->setStyleSheet("color: " + SONAR_COLORS[sonarID].name() + "; font-weight: bold;");
+        frameLayout->addWidget(thresholdWidget.nameLabel);
 
         // 阈值输入框
+        QHBoxLayout* inputLayout = new QHBoxLayout();
+        inputLayout->addWidget(new QLabel("阈值:"));
+
         thresholdWidget.thresholdSpinBox = new QDoubleSpinBox();
         thresholdWidget.thresholdSpinBox->setRange(0.0, 200.0);
         thresholdWidget.thresholdSpinBox->setSingleStep(0.1);
@@ -1238,13 +1255,15 @@ void MainWindow::createThresholdConfigPanel()
         connect(thresholdWidget.thresholdSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
                 [this, sonarID](double value) { onSonarThresholdChanged(sonarID, value); });
 
-        sonarThresholdLayout->addWidget(thresholdWidget.thresholdSpinBox, sonarID, 1);
+        inputLayout->addWidget(thresholdWidget.thresholdSpinBox);
+        frameLayout->addLayout(inputLayout);
 
         // 状态标签（显示当前实际使用的阈值）
         thresholdWidget.statusLabel = new QLabel("当前: 33.0");
-        thresholdWidget.statusLabel->setStyleSheet("color: gray; font-size: 10px;");
-        sonarThresholdLayout->addWidget(thresholdWidget.statusLabel, sonarID, 2);
+        thresholdWidget.statusLabel->setStyleSheet("color: gray; font-size: 9px;");
+        frameLayout->addWidget(thresholdWidget.statusLabel);
 
+        sonarThresholdLayout->addWidget(thresholdFrame, row, col);
         m_thresholdControls[sonarID] = thresholdWidget;
     }
 
@@ -1323,15 +1342,11 @@ void MainWindow::onSaveThresholdConfig()
         DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
         if (deviceModel) {
             try {
-                QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
-                QString configFileName = QString("threshold_config_%1.ini").arg(timestamp);
+                // 直接使用固定文件名，不带时间戳
+                QString configFileName = "threshold_config.ini";
 
                 deviceModel->saveThresholdConfig(configFileName.toStdString());
                 addLog(QString("阈值配置已保存到: %1").arg(configFileName));
-
-                // 同时保存一个默认文件名的配置
-                deviceModel->saveThresholdConfig("sonar_threshold_config.ini");
-                addLog("阈值配置已保存到默认文件: sonar_threshold_config.ini");
 
             } catch (const std::exception& e) {
                 addLog(QString("保存阈值配置失败: %1").arg(e.what()));
@@ -1340,15 +1355,17 @@ void MainWindow::onSaveThresholdConfig()
     }
 }
 
+// 同时修改 onLoadThresholdConfig 方法，确保加载的也是同一个文件
 void MainWindow::onLoadThresholdConfig()
 {
     if (m_component) {
         DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
         if (deviceModel) {
             try {
-                deviceModel->loadThresholdConfig("sonar_threshold_config.ini");
+                // 使用相同的固定文件名
+                deviceModel->loadThresholdConfig("threshold_config.ini");
                 syncThresholdFromModel();
-                addLog("阈值配置已从文件加载");
+                addLog("阈值配置已从 threshold_config.ini 加载");
 
             } catch (const std::exception& e) {
                 addLog(QString("加载阈值配置失败: %1").arg(e.what()));
