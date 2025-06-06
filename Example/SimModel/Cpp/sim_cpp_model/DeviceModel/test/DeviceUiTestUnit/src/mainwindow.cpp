@@ -20,6 +20,7 @@ const QList<QColor> MainWindow::SONAR_COLORS = {
 };
 
 // 构造函数
+// 构造函数应该只有一个完整的实现
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_centralWidget(nullptr)
@@ -48,17 +49,26 @@ MainWindow::MainWindow(QWidget *parent)
 
     // 初始化声纳状态
     for (int i = 0; i < 4; i++) {
-        m_sonarEnabledStates[i] = true;  // 默认全部启用
+        m_sonarEnabledStates[i] = true;
     }
 
-    // 初始化界面
+    // 1 初始化声纳范围配置的默认值
+    m_sonarRangeConfigs[0] = SonarRangeConfig{0, "艏端声纳", 30000.0f, -45.0f, 45.0f, 0.0f, 0.0f, false};
+    m_sonarRangeConfigs[1] = SonarRangeConfig{1, "舷侧声纳", 25000.0f, 45.0f, 135.0f, -135.0f, -45.0f, true};
+    m_sonarRangeConfigs[2] = SonarRangeConfig{2, "粗拖声纳", 35000.0f, 135.0f, 225.0f, 0.0f, 0.0f, false};
+    m_sonarRangeConfigs[3] = SonarRangeConfig{3, "细拖声纳", 40000.0f, 120.0f, 240.0f, 0.0f, 0.0f, false};
+
+    // 2 加载扩展配置
+    loadExtendedConfig();
+
+    // 3 初始化界面
     initializeUI();
 
-    // 创建声纳模型实例
+    // 4 创建声纳模型实例
     m_component = createComponent("sonar");
     m_agent = new DeviceModelAgent();
 
-    // 初始化声纳模型
+    // 5 初始化声纳模型
     if (m_component && m_agent) {
         m_component->init(m_agent, nullptr);
         m_component->start();
@@ -67,59 +77,24 @@ MainWindow::MainWindow(QWidget *parent)
         addLog("错误：声纳模型初始化失败");
     }
 
-    // 初始化定时器
+    // 6 初始化定时器
     initializeTimers();
 
-    // 发送基础数据（环境噪声和平台自噪声）
+    // 7 发送基础数据
     generateAndSendEnvironmentNoiseData();
     generateAndSendPlatformSelfSoundData();
 
+    // 8. 同步配置到界面和海图（在模型初始化之后）
+    if (m_component) {
+        QTimer::singleShot(100, this, [this]() {
+            syncThresholdFromModel();
+            syncSonarRangeToChart();
+            addLog("阈值和范围配置界面已同步");
+        });
+    }
+
     addLog("多目标声纳系统导调平台启动完成");
-
-
-
-
-    //  1. 首先初始化声纳范围配置的默认值
-     m_sonarRangeConfigs[0] = SonarRangeConfig{0, "艏端声纳", 30000.0f, -45.0f, 45.0f, 0.0f, 0.0f, false};
-     m_sonarRangeConfigs[1] = SonarRangeConfig{1, "舷侧声纳", 25000.0f, 45.0f, 135.0f, -135.0f, -45.0f, true};
-     m_sonarRangeConfigs[2] = SonarRangeConfig{2, "粗拖声纳", 35000.0f, 135.0f, 225.0f, 0.0f, 0.0f, false};
-     m_sonarRangeConfigs[3] = SonarRangeConfig{3, "细拖声纳", 40000.0f, 120.0f, 240.0f, 0.0f, 0.0f, false};
-
-     // 2. 加载扩展配置（在模型初始化之前）
-     loadExtendedConfig();
-
-     // 3. 初始化界面
-     initializeUI();
-
-     // 4. 创建声纳模型实例和agent
-     m_component = createComponent("sonar");
-     m_agent = new DeviceModelAgent();
-
-     // 5. 初始化声纳模型
-     if (m_component && m_agent) {
-         m_component->init(m_agent, nullptr);
-         m_component->start();
-         addLog("多目标声纳模型初始化完成");
-     }
-
-     // 6. 初始化定时器
-     initializeTimers();
-
-     // 7. 发送基础数据
-     generateAndSendEnvironmentNoiseData();
-     generateAndSendPlatformSelfSoundData();
-
-     // 8. 同步配置到界面和海图（在模型初始化之后）
-     if (m_component) {
-         QTimer::singleShot(100, this, [this]() {
-             syncThresholdFromModel();
-             syncSonarRangeToChart();
-             addLog("阈值和范围配置界面已同步");
-         });
-     }
-
-     addLog("多目标声纳系统导调平台启动完成");
- }
+}
 
 // 析构函数
 MainWindow::~MainWindow()
@@ -1651,16 +1626,40 @@ void MainWindow::loadExtendedConfig()
 
 void MainWindow::saveExtendedConfig()
 {
-    // 首先保存设备模型的配置
     if (m_component) {
         DeviceModel* deviceModel = dynamic_cast<DeviceModel*>(m_component);
         if (deviceModel) {
             try {
-                deviceModel->saveExtendedConfig("threshold_config.ini", m_sonarRangeConfigs);
+                std::string filename = "threshold_config.ini";
+                auto stdMap = convertToDeviceModelConfig(m_sonarRangeConfigs);
+                deviceModel->saveExtendedConfig(filename, stdMap);
                 addLog("声纳阈值和范围配置已保存到: threshold_config.ini");
             } catch (const std::exception& e) {
                 addLog(QString("保存扩展配置失败: %1").arg(e.what()));
             }
         }
     }
+}
+
+std::map<int, DeviceModel::SonarRangeConfig> MainWindow::convertToDeviceModelConfig(const QMap<int, SonarRangeConfig>& qmap) const
+{
+    std::map<int, DeviceModel::SonarRangeConfig> stdMap;
+
+    for (auto it = qmap.begin(); it != qmap.end(); ++it) {
+        int sonarId = it.key();
+        const SonarRangeConfig& qConfig = it.value();
+
+        DeviceModel::SonarRangeConfig dmConfig;
+        dmConfig.sonarId = qConfig.sonarId;
+        dmConfig.maxRange = qConfig.maxRange;
+        dmConfig.startAngle1 = qConfig.startAngle1;
+        dmConfig.endAngle1 = qConfig.endAngle1;
+        dmConfig.startAngle2 = qConfig.startAngle2;
+        dmConfig.endAngle2 = qConfig.endAngle2;
+        dmConfig.hasTwoSegments = qConfig.hasTwoSegments;
+
+        stdMap[sonarId] = dmConfig;
+    }
+
+    return stdMap;
 }

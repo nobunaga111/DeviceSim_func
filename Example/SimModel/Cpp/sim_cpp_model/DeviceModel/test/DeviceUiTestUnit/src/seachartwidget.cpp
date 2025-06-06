@@ -1,4 +1,4 @@
-#include "SeaChartWidget.h"
+#include "seachartwidget.h"
 #include "mainwindow.h"
 #include <QPainter>
 #include <QWheelEvent>
@@ -8,6 +8,8 @@
 #include <QGridLayout>
 #include <QtMath>
 #include <QDebug>
+#include "mainwindow.h"
+#include "SonarConfig.h"
 
 // 静态常量定义
 const double SeaChartWidget::DEFAULT_SCALE = 100.0;    // 100米/像素
@@ -2079,13 +2081,13 @@ void SeaChartWidget::updatePlatformMovement()
 
 
 // 从配置初始化声纳探测范围
-void SeaChartWidget::initializeSonarRangesFromConfig(const QMap<int, MainWindow::SonarRangeConfig>& rangeConfigs)
+void SeaChartWidget::initializeSonarRangesFromConfig(const QMap<int, SonarRangeConfig>& rangeConfigs)
 {
     m_sonarRanges.clear(); // 先清空，避免重复添加
 
     for (auto it = rangeConfigs.begin(); it != rangeConfigs.end(); ++it) {
         int sonarID = it.key();
-        const MainWindow::SonarRangeConfig& config = it.value();
+        const SonarRangeConfig& config = it.value();
 
         QVector<SonarDetectionRange> ranges = createSonarRangesFromConfig(config);
         for (const auto& range : ranges) {
@@ -2097,7 +2099,7 @@ void SeaChartWidget::initializeSonarRangesFromConfig(const QMap<int, MainWindow:
 }
 
 // 根据配置创建声纳探测范围定义
-QVector<SonarDetectionRange> SeaChartWidget::createSonarRangesFromConfig(const MainWindow::SonarRangeConfig& config)
+QVector<SonarDetectionRange> SeaChartWidget::createSonarRangesFromConfig(const SonarRangeConfig& config)
 {
     QVector<SonarDetectionRange> ranges;
 
@@ -2173,7 +2175,7 @@ void SeaChartWidget::updateSonarMaxRange(int sonarId, float maxRange)
 }
 
 // 批量更新声纳最大探测距离
-void SeaChartWidget::updateSonarMaxRanges(const QMap<int, MainWindow::SonarRangeConfig>& rangeConfigs)
+void SeaChartWidget::updateSonarMaxRanges(const QMap<int, SonarRangeConfig>& rangeConfigs)
 {
     bool anyUpdated = false;
 

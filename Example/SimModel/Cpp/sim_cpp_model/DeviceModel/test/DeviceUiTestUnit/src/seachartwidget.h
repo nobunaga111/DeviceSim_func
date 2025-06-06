@@ -28,7 +28,7 @@
 #include <QFile>
 #include <QPixmap>
 #include <cmath>
-#include "mainwindow.h"
+#include "SonarConfig.h"
 
 // 前向声明
 class MainWindow;
@@ -289,7 +289,7 @@ public:
      * @brief 从配置初始化声纳探测范围
      * @param rangeConfigs 声纳范围配置映射
      */
-    void initializeSonarRangesFromConfig(const QMap<int, MainWindow::SonarRangeConfig>& rangeConfigs);
+    void initializeSonarRangesFromConfig(const QMap<int, SonarRangeConfig>& rangeConfigs);
 
     /**
      * @brief 更新单个声纳的最大探测距离
@@ -302,7 +302,7 @@ public:
      * @brief 批量更新声纳最大探测距离
      * @param rangeConfigs 声纳范围配置映射
      */
-    void updateSonarMaxRanges(const QMap<int, MainWindow::SonarRangeConfig>& rangeConfigs);
+    void updateSonarMaxRanges(const QMap<int, SonarRangeConfig>& rangeConfigs);
 
 signals:
     /**
@@ -449,7 +449,7 @@ private:
      * @param config 声纳范围配置
      * @return 声纳探测范围列表
      */
-    QVector<SonarDetectionRange> createSonarRangesFromConfig(const MainWindow::SonarRangeConfig& config);
+    QVector<SonarDetectionRange> createSonarRangesFromConfig(const SonarRangeConfig& config);
 
     /**
      * @brief 根据声纳ID获取对应的颜色

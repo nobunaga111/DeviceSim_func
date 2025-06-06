@@ -27,7 +27,8 @@
 #include "DeviceModelAgent.h"
 #include "DeviceTestInOut.h"
 #include "devicemodel.h"
-#include "SeaChartWidget.h"
+#include "seachartwidget.h"
+#include "SonarConfig.h"
 
 class MainWindow : public QMainWindow
 {
@@ -222,6 +223,10 @@ private:
 
     bool m_fileLogEnabled = true;                   // 文件日志是否启用
     QVBoxLayout* m_controlPanelLayout;              // 控制面板布局
+
+
+    std::map<int, DeviceModel::SonarRangeConfig> convertToDeviceModelConfig(const QMap<int, SonarRangeConfig>& qmap) const;
+
 };
 
 #endif // MAINWINDOW_H
