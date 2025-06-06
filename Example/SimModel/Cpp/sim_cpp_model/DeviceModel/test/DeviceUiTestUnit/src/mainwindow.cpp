@@ -1184,68 +1184,80 @@ void MainWindow::generateAndSendPlatformMotionData()
     }
 }
 
+// 声纳阈值配置面板
 void MainWindow::createThresholdConfigPanel()
 {
     // === 阈值配置组 ===
     m_thresholdConfigGroup = new QGroupBox("声纳探测阈值配置");
-    m_thresholdConfigGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 12px; }");
+    m_thresholdConfigGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; }");
 
     QVBoxLayout* thresholdLayout = new QVBoxLayout(m_thresholdConfigGroup);
 
-    // 移除全局阈值设置部分
-    // 直接创建各声纳独立阈值设置
+//    QLabel* individualLabel = new QLabel("各声纳探测阈值:");
+//    individualLabel->setStyleSheet("font-weight: bold; color: blue; font-size: 14px;");
+//    thresholdLayout->addWidget(individualLabel);
 
-    // 各声纳独立阈值设置 - 2行2列布局
-    QLabel* individualLabel = new QLabel("各声纳探测阈值:");
-    individualLabel->setStyleSheet("font-weight: bold; color: blue;");
-    thresholdLayout->addWidget(individualLabel);
-
+    // 使用1行4列网格布局 - 每个声纳独立一列
     QGridLayout* sonarThresholdLayout = new QGridLayout();
+    sonarThresholdLayout->setSpacing(12); // 增加列间距
+
+    // 设置4列等宽
+    for (int i = 0; i < 4; i++) {
+        sonarThresholdLayout->setColumnStretch(i, 1);
+    }
 
     for (int sonarID = 0; sonarID < 4; sonarID++) {
         SonarThresholdWidget thresholdWidget;
 
-        // 计算网格位置：2列排列
-        int row = sonarID / 2;    // 行号：0,0,1,1
-        int col = sonarID % 2;    // 列号：0,1,0,1
+        // 每个声纳占一列：第0行，第sonarID列
+        int row = 0;
+        int col = sonarID;
 
         // 为每个声纳创建一个容器框架
         QFrame* thresholdFrame = new QFrame();
         thresholdFrame->setFrameStyle(QFrame::Box);
-        thresholdFrame->setStyleSheet("QFrame { border: 1px solid lightgray; border-radius: 3px; padding: 5px; }");
+        thresholdFrame->setStyleSheet("QFrame { border: 1px solid lightgray; border-radius: 5px; padding: 12px; }");
+        thresholdFrame->setMinimumWidth(120);  // 适中的最小宽度
+        thresholdFrame->setMinimumHeight(100); // 足够的高度
 
         QVBoxLayout* frameLayout = new QVBoxLayout(thresholdFrame);
-        frameLayout->setSpacing(5);
+        frameLayout->setSpacing(4);
 
-        // 声纳名称标签
+        // 声纳名称标签 - 居中显示
         thresholdWidget.nameLabel = new QLabel(SONAR_NAMES[sonarID]);
-        thresholdWidget.nameLabel->setStyleSheet("color: " + SONAR_COLORS[sonarID].name() + "; font-weight: bold; font-size: 14px;");
+        thresholdWidget.nameLabel->setStyleSheet("color: " + SONAR_COLORS[sonarID].name() + "; font-weight: bold; font-size: 13px;");
+        thresholdWidget.nameLabel->setAlignment(Qt::AlignCenter);
         frameLayout->addWidget(thresholdWidget.nameLabel);
 
-        // 阈值输入框
-        QHBoxLayout* inputLayout = new QHBoxLayout();
-        inputLayout->addWidget(new QLabel("阈值:"));
+        // 阈值标签
+        QLabel* thresholdLabel = new QLabel("阈值:");
+        thresholdLabel->setStyleSheet("font-size: 12px; color: #666;");
+        thresholdLabel->setAlignment(Qt::AlignCenter);
+        frameLayout->addWidget(thresholdLabel);
 
+        // 阈值输入框 - 居中
         thresholdWidget.thresholdSpinBox = new QDoubleSpinBox();
         thresholdWidget.thresholdSpinBox->setRange(0.0, 200.0);
         thresholdWidget.thresholdSpinBox->setSingleStep(0.1);
         thresholdWidget.thresholdSpinBox->setDecimals(2);
+        thresholdWidget.thresholdSpinBox->setMinimumWidth(80);
+        thresholdWidget.thresholdSpinBox->setAlignment(Qt::AlignCenter);
 
         // 设置默认值
         double defaultValues[] = {35.0, 33.0, 43.0, 43.0};
         thresholdWidget.thresholdSpinBox->setValue(defaultValues[sonarID]);
         thresholdWidget.thresholdSpinBox->setSuffix(" dB");
 
-        // 连接信号，使用lambda捕获sonarID
+        // 连接信号
         connect(thresholdWidget.thresholdSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
                 [this, sonarID](double value) { onSonarThresholdChanged(sonarID, value); });
 
-        inputLayout->addWidget(thresholdWidget.thresholdSpinBox);
-        frameLayout->addLayout(inputLayout);
+        frameLayout->addWidget(thresholdWidget.thresholdSpinBox, 0, Qt::AlignCenter);
 
-        // 状态标签（显示当前实际使用的阈值）
+        // 状态标签 - 居中显示
         thresholdWidget.statusLabel = new QLabel(QString("当前: %1").arg(defaultValues[sonarID], 0, 'f', 2));
         thresholdWidget.statusLabel->setStyleSheet("color: blue; font-size: 10px;");
+        thresholdWidget.statusLabel->setAlignment(Qt::AlignCenter);
         frameLayout->addWidget(thresholdWidget.statusLabel);
 
         sonarThresholdLayout->addWidget(thresholdFrame, row, col);
@@ -1254,28 +1266,127 @@ void MainWindow::createThresholdConfigPanel()
 
     thresholdLayout->addLayout(sonarThresholdLayout);
 
-    // 控制按钮
+    // 控制按钮 - 水平排列，居中
     QHBoxLayout* thresholdButtonLayout = new QHBoxLayout();
+    thresholdButtonLayout->addStretch(); // 左侧弹性空间
 
     m_saveThresholdConfigButton = new QPushButton("保存配置");
-    m_saveThresholdConfigButton->setStyleSheet("background-color: lightgreen;");
+    m_saveThresholdConfigButton->setStyleSheet("background-color: lightgreen; padding: 6px 12px; font-size: 12px;");
     connect(m_saveThresholdConfigButton, &QPushButton::clicked,
             this, &MainWindow::onSaveThresholdConfig);
-    thresholdButtonLayout->addWidget(m_saveThresholdConfigButton);
 
     m_loadThresholdConfigButton = new QPushButton("加载配置");
-    m_loadThresholdConfigButton->setStyleSheet("background-color: lightblue;");
+    m_loadThresholdConfigButton->setStyleSheet("background-color: lightblue; padding: 6px 12px; font-size: 12px;");
     connect(m_loadThresholdConfigButton, &QPushButton::clicked,
             this, &MainWindow::onLoadThresholdConfig);
-    thresholdButtonLayout->addWidget(m_loadThresholdConfigButton);
 
-    m_resetThresholdButton = new QPushButton("重置默认");
-    m_resetThresholdButton->setStyleSheet("background-color: orange;");
+    m_resetThresholdButton = new QPushButton("重置阈值");
+    m_resetThresholdButton->setStyleSheet("background-color: lightyellow; padding: 6px 12px; font-size: 12px;");
     connect(m_resetThresholdButton, &QPushButton::clicked,
             this, &MainWindow::onResetThreshold);
+
+    thresholdButtonLayout->addWidget(m_saveThresholdConfigButton);
+    thresholdButtonLayout->addWidget(m_loadThresholdConfigButton);
     thresholdButtonLayout->addWidget(m_resetThresholdButton);
+    thresholdButtonLayout->addStretch(); // 右侧弹性空间
 
     thresholdLayout->addLayout(thresholdButtonLayout);
+}
+
+// 声纳范围配置面板
+void MainWindow::createSonarRangeConfigPanel()
+{
+    // === 声纳范围配置组 ===
+    m_sonarRangeConfigGroup = new QGroupBox("声纳最大探测距离配置");
+    m_sonarRangeConfigGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; }");
+
+    QVBoxLayout* rangeLayout = new QVBoxLayout(m_sonarRangeConfigGroup);
+
+    // 使用1行4列网格布局
+    QGridLayout* sonarRangeLayout = new QGridLayout();
+    sonarRangeLayout->setSpacing(4);
+
+    // 设置4列等宽
+    for (int i = 0; i < 4; i++) {
+        sonarRangeLayout->setColumnStretch(i, 1);
+    }
+
+    for (int sonarID = 0; sonarID < 4; sonarID++) {
+        SonarRangeWidget rangeWidget;
+
+        // 每个声纳占一列
+        int row = 0;
+        int col = sonarID;
+
+        // 为每个声纳创建一个容器框架
+        QFrame* rangeFrame = new QFrame();
+        rangeFrame->setFrameStyle(QFrame::Box);
+        rangeFrame->setStyleSheet("QFrame { border: 1px solid lightgray; border-radius: 5px; padding: 12px; }");
+        rangeFrame->setMinimumWidth(120);
+        rangeFrame->setMinimumHeight(100);
+
+        QVBoxLayout* frameLayout = new QVBoxLayout(rangeFrame);
+        frameLayout->setSpacing(4);
+
+        // 声纳名称标签
+        rangeWidget.nameLabel = new QLabel(SONAR_NAMES[sonarID]);
+        rangeWidget.nameLabel->setStyleSheet("color: " + SONAR_COLORS[sonarID].name() + "; font-weight: bold; font-size: 13px;");
+        rangeWidget.nameLabel->setAlignment(Qt::AlignCenter);
+        frameLayout->addWidget(rangeWidget.nameLabel);
+
+        // 距离标签
+        QLabel* distanceLabel = new QLabel("最大距离:");
+        distanceLabel->setStyleSheet("font-size: 12px; color: #666;");
+        distanceLabel->setAlignment(Qt::AlignCenter);
+        frameLayout->addWidget(distanceLabel);
+
+        // 最大距离输入框
+        rangeWidget.rangeSpinBox = new QDoubleSpinBox();
+        rangeWidget.rangeSpinBox->setRange(1000.0, 100000.0);
+        rangeWidget.rangeSpinBox->setSingleStep(1000.0);
+        rangeWidget.rangeSpinBox->setDecimals(0);
+        rangeWidget.rangeSpinBox->setValue(m_sonarRangeConfigs[sonarID].maxRange);
+        rangeWidget.rangeSpinBox->setSuffix(" 米");
+        rangeWidget.rangeSpinBox->setMinimumWidth(80);
+        rangeWidget.rangeSpinBox->setAlignment(Qt::AlignCenter);
+
+        // 连接信号
+        connect(rangeWidget.rangeSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+                [this, sonarID](double value) { onSonarRangeChanged(sonarID, value); });
+
+        frameLayout->addWidget(rangeWidget.rangeSpinBox, 0, Qt::AlignCenter);
+
+        // 状态标签
+        rangeWidget.statusLabel = new QLabel(QString("当前: %1m").arg(m_sonarRangeConfigs[sonarID].maxRange, 0, 'f', 0));
+        rangeWidget.statusLabel->setStyleSheet("color: purple; font-size: 10px;");
+        rangeWidget.statusLabel->setAlignment(Qt::AlignCenter);
+        frameLayout->addWidget(rangeWidget.statusLabel);
+
+        sonarRangeLayout->addWidget(rangeFrame, row, col);
+        m_rangeControls[sonarID] = rangeWidget;
+    }
+
+    rangeLayout->addLayout(sonarRangeLayout);
+
+    // 控制按钮 - 居中排列
+    QHBoxLayout* rangeButtonLayout = new QHBoxLayout();
+    rangeButtonLayout->addStretch();
+
+    m_saveRangeConfigButton = new QPushButton("保存范围配置");
+    m_saveRangeConfigButton->setStyleSheet("background-color: lightcoral; padding: 6px 12px; font-size: 12px;");
+    connect(m_saveRangeConfigButton, &QPushButton::clicked,
+            this, &MainWindow::onSaveRangeConfig);
+
+    m_resetRangeConfigButton = new QPushButton("重置范围配置");
+    m_resetRangeConfigButton->setStyleSheet("background-color: lightgray; padding: 6px 12px; font-size: 12px;");
+    connect(m_resetRangeConfigButton, &QPushButton::clicked,
+            this, &MainWindow::onResetRangeConfig);
+
+    rangeButtonLayout->addWidget(m_saveRangeConfigButton);
+    rangeButtonLayout->addWidget(m_resetRangeConfigButton);
+    rangeButtonLayout->addStretch();
+
+    rangeLayout->addLayout(rangeButtonLayout);
 }
 
 void MainWindow::onToggleFileLogClicked()
@@ -1425,88 +1536,6 @@ void MainWindow::syncThresholdFromModel()
 }
 
 
-// 创建声纳范围配置面板
-void MainWindow::createSonarRangeConfigPanel()
-{
-    // === 声纳范围配置组 ===
-    m_sonarRangeConfigGroup = new QGroupBox("声纳最大探测距离配置");
-    m_sonarRangeConfigGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; }"); // 字体大小从12px改为14px
-
-    QVBoxLayout* rangeLayout = new QVBoxLayout(m_sonarRangeConfigGroup);
-
-    QLabel* rangeLabel = new QLabel("声纳覆盖显示距离:");
-    rangeLabel->setStyleSheet("font-weight: bold; color: purple; font-size: 14px;");
-    rangeLayout->addWidget(rangeLabel);
-
-    // 声纳范围设置 - 2行2列布局
-    QGridLayout* sonarRangeLayout = new QGridLayout();
-
-    for (int sonarID = 0; sonarID < 4; sonarID++) {
-        SonarRangeWidget rangeWidget;
-
-        // 计算网格位置：2列排列
-        int row = sonarID / 2;    // 行号：0,0,1,1
-        int col = sonarID % 2;    // 列号：0,1,0,1
-
-        // 为每个声纳创建一个容器框架
-        QFrame* rangeFrame = new QFrame();
-        rangeFrame->setFrameStyle(QFrame::Box);
-        rangeFrame->setStyleSheet("QFrame { border: 1px solid lightgray; border-radius: 3px; padding: 5px; }");
-
-        QVBoxLayout* frameLayout = new QVBoxLayout(rangeFrame);
-        frameLayout->setSpacing(5);
-
-        // 声纳名称标签
-        rangeWidget.nameLabel = new QLabel(SONAR_NAMES[sonarID]);
-        rangeWidget.nameLabel->setStyleSheet("color: " + SONAR_COLORS[sonarID].name() + "; font-weight: bold; font-size: 14px;");
-        frameLayout->addWidget(rangeWidget.nameLabel);
-
-        // 最大距离输入框
-        QHBoxLayout* inputLayout = new QHBoxLayout();
-        inputLayout->addWidget(new QLabel("最大距离:"));
-
-        rangeWidget.rangeSpinBox = new QDoubleSpinBox();
-        rangeWidget.rangeSpinBox->setRange(1000.0, 100000.0);  // 1km到100km
-        rangeWidget.rangeSpinBox->setSingleStep(1000.0);
-        rangeWidget.rangeSpinBox->setDecimals(0);
-        rangeWidget.rangeSpinBox->setValue(m_sonarRangeConfigs[sonarID].maxRange);
-        rangeWidget.rangeSpinBox->setSuffix(" 米");
-
-        // 连接信号
-        connect(rangeWidget.rangeSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-                [this, sonarID](double value) { onSonarRangeChanged(sonarID, value); });
-
-        inputLayout->addWidget(rangeWidget.rangeSpinBox);
-        frameLayout->addLayout(inputLayout);
-
-        // 状态标签
-        rangeWidget.statusLabel = new QLabel(QString("当前: %1m").arg(m_sonarRangeConfigs[sonarID].maxRange, 0, 'f', 0));
-        rangeWidget.statusLabel->setStyleSheet("color: blue; font-size: 12px;");
-        frameLayout->addWidget(rangeWidget.statusLabel);
-
-        sonarRangeLayout->addWidget(rangeFrame, row, col);
-        m_rangeControls[sonarID] = rangeWidget;
-    }
-
-    rangeLayout->addLayout(sonarRangeLayout);
-
-    // 控制按钮
-    QHBoxLayout* rangeButtonLayout = new QHBoxLayout();
-
-    m_saveRangeConfigButton = new QPushButton("保存范围配置");
-    m_saveRangeConfigButton->setStyleSheet("background-color: lightgreen;");
-    connect(m_saveRangeConfigButton, &QPushButton::clicked,
-            this, &MainWindow::onSaveRangeConfig);
-    rangeButtonLayout->addWidget(m_saveRangeConfigButton);
-
-    m_resetRangeConfigButton = new QPushButton("重置默认范围");
-    m_resetRangeConfigButton->setStyleSheet("background-color: orange;");
-    connect(m_resetRangeConfigButton, &QPushButton::clicked,
-            this, &MainWindow::onResetRangeConfig);
-    rangeButtonLayout->addWidget(m_resetRangeConfigButton);
-
-    rangeLayout->addLayout(rangeButtonLayout);
-}
 
 
 void MainWindow::onResetRangeConfig()
