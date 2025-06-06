@@ -103,6 +103,12 @@ void Logger::error(const char* function, int line, const std::string& message) {
     }
 }
 
+void Logger::empty(const char* function, int line, const std::string& message) {
+    if (isEnabled(LogLevel::INFO)) {
+        writeLogEmpty(LogLevel::INFO, function, line, message);
+    }
+}
+
 void Logger::flush() {
     if (m_enableConsole) {
         std::cout.flush();
@@ -147,6 +153,35 @@ void Logger::writeLog(LogLevel level, const char* function, int line, const std:
               << "[" << getLevelString(level) << "] "
               << "[" << function << ":" << line << "] "
               << message;
+
+    std::string logLine = logStream.str();
+
+    // 输出到控制台
+    if (m_enableConsole) {
+        std::cout << logLine << std::endl;
+    }
+
+    // 输出到文件 - 明显的状态检查
+    std::cout << "DEBUG writeLog: this=" << this
+                  << ", m_fileOutputEnabled=" << this->m_fileOutputEnabled
+                  << ", m_enableFile=" << this->m_enableFile
+                  << ", file_open=" << (this->m_logFile.is_open() ? 1 : 0) << std::endl;
+
+    if (m_fileOutputEnabled && m_enableFile && m_logFile.is_open()) {
+        m_logFile << logLine << std::endl;
+        m_logFile.flush();
+        std::cout << "DEBUG: Log written to file" << std::endl;
+    } else {
+        std::cout << "DEBUG: Log NOT written to file" << std::endl;
+    }
+}
+
+void Logger::writeLogEmpty(LogLevel level, const char* function, int line, const std::string& message) {
+
+
+
+    std::stringstream logStream;
+    logStream << message;
 
     std::string logLine = logStream.str();
 

@@ -206,11 +206,13 @@ void DeviceModel::onMessage(CSimMessage* simMessage)
        }
 
        if (shouldLog) {
+           LOG_EMPTY("");
            LOG_INFOF("==========onMessage!!! Topic: %s", topic.c_str());
            LOG_INFOF("Received message with topic: %s", topic.c_str());
        }
    } else {
        // 其他消息正常打印
+       LOG_EMPTY("");
        LOG_INFOF("==========onMessage!!! Topic: %s", topic.c_str());
        LOG_INFOF("Received message with topic: %s", topic.c_str());
    }
@@ -389,6 +391,7 @@ void DeviceModel::updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage)
         const auto& targetsData = m_multiTargetCache.sonarTargetsData[sonarID];
         LOG_INFOF("Sonar %d now tracking %zu targets", sonarID, targetsData.size());
     }
+    LOG_EMPTY("");
 }
 bool DeviceModel::isTargetInSonarRange(int sonarID, float targetBearing, float targetDistance)
 {

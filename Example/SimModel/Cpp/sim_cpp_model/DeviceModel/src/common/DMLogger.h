@@ -37,6 +37,7 @@ public:
     void info(const char* function, int line, const std::string& message);
     void warn(const char* function, int line, const std::string& message);
     void error(const char* function, int line, const std::string& message);
+    void empty(const char* function, int line, const std::string& message);
 
     // 格式化日志方法
     template<typename... Args>
@@ -87,6 +88,7 @@ private:
 
     // 内部日志写入方法
     void writeLog(LogLevel level, const char* function, int line, const std::string& message);
+    void writeLogEmpty(LogLevel level, const char* function, int line, const std::string& message);
 
     // 格式化字符串
     template<typename... Args>
@@ -149,6 +151,8 @@ std::string Logger::formatString(const char* format, Args... args) {
 #define LOG_INFO(msg) Logger::getInstance().info(__FUNCTION__, __LINE__, msg)
 #define LOG_WARN(msg) Logger::getInstance().warn(__FUNCTION__, __LINE__, msg)
 #define LOG_ERROR(msg) Logger::getInstance().error(__FUNCTION__, __LINE__, msg)
+
+#define LOG_EMPTY(msg) Logger::getInstance().empty(__FUNCTION__, __LINE__, msg)
 
 #define LOG_DEBUGF(format, ...) Logger::getInstance().debugf(__FUNCTION__, __LINE__, format, ##__VA_ARGS__)
 #define LOG_INFOF(format, ...) Logger::getInstance().infof(__FUNCTION__, __LINE__, format, ##__VA_ARGS__)
