@@ -266,9 +266,6 @@ private:
     int64 m_lastProcessTime;                    // 上次处理时间
     int m_nextTrackId;                          // 下一个跟踪ID
 
-//    std::ofstream log;
-//    bool ifOutput = true;
-
     // *** 多目标声纳方程计算相关的成员变量 ***
     MultiTargetSonarEquationCache m_multiTargetCache;  // 多目标声纳方程数据缓存
 
@@ -287,24 +284,10 @@ private:
         {3, {0.3, 25}}     // 细拖声纳: f=0.3kHz, offset=25
     };
 
-    // 兼容性支持 - 保留旧的缓存结构用于向后兼容
-    struct SonarEquationCache {
-        std::map<int, std::vector<float>> propagatedContinuousSpectrum;
-        std::map<int, std::vector<float>> platformSelfSoundSpectrum;
-        std::map<int, std::vector<float>> environmentNoiseSpectrum;
-        int64 lastPropagatedSoundTime;
-        int64 lastPlatformSoundTime;
-        int64 lastEnvironmentNoiseTime;
-        std::map<int, double> equationResults;
 
-        SonarEquationCache() {
-            lastPropagatedSoundTime = 0;
-            lastPlatformSoundTime = 0;
-            lastEnvironmentNoiseTime = 0;
-        }
-    };
 
-    SonarEquationCache m_equationCache;  // 保留用于兼容性
+    int64 m_lastPropagatedSoundLogTime = 0;  // 上次打印传播声日志的时间
+    static const int64 PROPAGATED_SOUND_LOG_INTERVAL = 5000; // 5秒打印间隔
 };
 
 #endif // DEVICEMODEL_H

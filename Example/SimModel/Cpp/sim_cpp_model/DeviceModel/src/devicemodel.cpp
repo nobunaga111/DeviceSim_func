@@ -28,10 +28,6 @@ DeviceModel::DeviceModel()
 
     // 初始化多目标缓存
     m_multiTargetCache = MultiTargetSonarEquationCache();
-    // 初始化兼容性缓存
-    m_equationCache = SonarEquationCache();
-
-//    LOG_INFO("Sonar model created with multi-target equation calculation capability");
 
     // 初始化平台机动信息
     m_platformMotion = CData_Motion();
@@ -183,10 +179,25 @@ void DeviceModel::onMessage(CSimMessage* simMessage)
 
     // 根据消息主题进行相应处理
     std::string topic = simMessage->topic;
-    LOG_INFOF("onMessage!!! Topic: %s", topic.c_str());
+
+    // 对MSG_PropagatedContinuousSound特殊处理，控制打印频率
+    if (topic == MSG_PropagatedContinuousSound) {
+        int64 currentTime = QDateTime::currentMSecsSinceEpoch();
+        if (currentTime - m_lastPropagatedSoundLogTime >= PROPAGATED_SOUND_LOG_INTERVAL) {
+            LOG_INFOF("onMessage!!! Topic: %s", topic.c_str());
+            LOG_INFOF("Received message with topic: %s", topic.c_str());
+            m_lastPropagatedSoundLogTime = currentTime;
+        }
+    } else {
+        // 其他消息正常打印
+        LOG_INFOF("onMessage!!! Topic: %s", topic.c_str());
+        LOG_INFOF("Received message with topic: %s", topic.c_str());
+    }
 
 
-    LOG_INFOF("Received message with topic: %s", topic.c_str());
+
+
+
 
     // 声纳指控指令
     if (topic == MSG_SonarCommandControlOrder) {
