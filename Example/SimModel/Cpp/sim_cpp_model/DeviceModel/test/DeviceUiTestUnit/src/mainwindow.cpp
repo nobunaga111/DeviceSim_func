@@ -496,7 +496,7 @@ void MainWindow::onSonarSwitchToggled(int sonarID, bool enabled)
     // 发送声纳控制命令
     sendSonarControlOrder(sonarID, enabled);
 
-    // 新增：同步控制海图上的声纳范围显示
+    // 同步控制海图上的声纳范围显示
     if (m_seaChartWidget) {
         m_seaChartWidget->setSonarRangeVisible(sonarID, enabled);
         addLog(QString("海图上声纳 %1 覆盖范围已%2").arg(sonarID).arg(enabled ? "显示" : "隐藏"));
@@ -1193,10 +1193,6 @@ void MainWindow::createThresholdConfigPanel()
 
     QVBoxLayout* thresholdLayout = new QVBoxLayout(m_thresholdConfigGroup);
 
-    QLabel* thresholdLabel = new QLabel("阈值设置:");
-    thresholdLabel->setStyleSheet("font-weight: bold; color: purple; font-size: 14px;");
-    thresholdLayout->addWidget(thresholdLabel);
-
     // 创建水平布局容器，将声纳控件和按钮并排放置
     QHBoxLayout* thresholdHorizontalLayout = new QHBoxLayout();
 
@@ -1299,10 +1295,6 @@ void MainWindow::createSonarRangeConfigPanel()
     m_sonarRangeConfigGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; }");
 
     QVBoxLayout* rangeLayout = new QVBoxLayout(m_sonarRangeConfigGroup);
-
-    QLabel* rangeLabel = new QLabel("声纳覆盖显示距离:");
-    rangeLabel->setStyleSheet("font-weight: bold; color: purple; font-size: 14px;");
-    rangeLayout->addWidget(rangeLabel);
 
     // 创建水平布局容器，将声纳控件和按钮并排放置
     QHBoxLayout* rangeHorizontalLayout = new QHBoxLayout();
@@ -1664,8 +1656,31 @@ void MainWindow::loadExtendedConfig()
             value.erase(0, value.find_first_not_of(" \t"));
             value.erase(value.find_last_not_of(" \t") + 1);
 
+            // *** 处理声纳角度设置 ***
+            if (currentSection == "SonarAngles") {
+                if (key.substr(0, 5) == "Sonar") {
+                    int sonarID = std::stoi(key.substr(5, 1));
+                    if (sonarID >= 0 && sonarID < 4) {
+                        std::string paramName = key.substr(6); // 获取参数名（如_StartAngle1）
+
+                        if (paramName == "_StartAngle1") {
+                            m_sonarRangeConfigs[sonarID].startAngle1 = std::stof(value);
+                            addLog(QString("加载声纳%1起始角度1: %2°").arg(sonarID).arg(std::stof(value)));
+                        } else if (paramName == "_EndAngle1") {
+                            m_sonarRangeConfigs[sonarID].endAngle1 = std::stof(value);
+                            addLog(QString("加载声纳%1结束角度1: %2°").arg(sonarID).arg(std::stof(value)));
+                        } else if (paramName == "_StartAngle2") {
+                            m_sonarRangeConfigs[sonarID].startAngle2 = std::stof(value);
+                        } else if (paramName == "_EndAngle2") {
+                            m_sonarRangeConfigs[sonarID].endAngle2 = std::stof(value);
+                        } else if (paramName == "_HasTwoSegments") {
+                            m_sonarRangeConfigs[sonarID].hasTwoSegments = (value == "true" || value == "1");
+                        }
+                    }
+                }
+            }
             // 处理声纳范围设置
-            if (currentSection == "SonarRanges") {
+            else if (currentSection == "SonarRanges") {
                 if (key.substr(0, 5) == "Sonar" && key.substr(6) == "_MaxRange") {
                     int sonarID = std::stoi(key.substr(5, 1));
                     if (sonarID >= 0 && sonarID < 4) {
@@ -1677,6 +1692,9 @@ void MainWindow::loadExtendedConfig()
         }
 
         configFile.close();
+
+        // *** 重要：配置加载完成后，同步到海图显示 ***
+        syncSonarRangeToChart();
         addLog("扩展配置已从文件加载: threshold_config.ini");
 
     } catch (const std::exception& e) {
