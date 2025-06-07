@@ -5,10 +5,10 @@
 #define M_PI 3.14159265358979323846
 
 // 声纳系统常量定义
-#define MAX_DETECTION_RANGE 30000.0  // 最大探测距离(米)
-#define MAX_PASSIVE_TRACKS 10        // 最大被动跟踪目标数
-#define MAX_ACTIVE_TRACKS 10         // 最大主动跟踪目标数
-#define MAX_SCOUTING_TRACKS 10       // 最大侦察跟踪目标数
+#define MAX_DETECTION_RANGE 300000.0  // 最大探测距离(米)
+#define MAX_PASSIVE_TRACKS 8        // 最大被动跟踪目标数
+#define MAX_ACTIVE_TRACKS 8         // 最大主动跟踪目标数
+#define MAX_SCOUTING_TRACKS 8       // 最大侦察跟踪目标数
 
 // 声纳数量和ID定义
 #define SONAR_COUNT 4               // 声纳总数量

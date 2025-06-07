@@ -14,10 +14,10 @@ const QStringList MainWindow::SONAR_NAMES = {
 };
 
 const QList<QColor> MainWindow::SONAR_COLORS = {
-    QColor(0, 255, 0),      // 艏端声纳 - 绿色
-    QColor(0, 0, 255),      // 舷侧声纳 - 蓝色
-    QColor(255, 255, 0),    // 粗拖声纳 - 黄色
-    QColor(255, 0, 255)     // 细拖声纳 - 洋红色
+    QColor(0, 255, 0, 119),      // 艏端声纳 - 绿色，80%透明
+    QColor(0, 0, 255, 119),      // 舷侧声纳 - 蓝色，80%透明
+    QColor(255, 255, 0, 119),    // 粗拖声纳 - 黄色，80%透明
+    QColor(255, 0, 255, 119)     // 细拖声纳 - 洋红色，80%透明
 };
 
 // 构造函数
@@ -53,16 +53,16 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
     // 1 初始化声纳范围配置的默认值
-    m_sonarRangeConfigs[0] = SonarRangeConfig{0, "艏端声纳", 30000.0f, -45.0f, 45.0f, 0.0f, 0.0f, false};
-    m_sonarRangeConfigs[1] = SonarRangeConfig{1, "舷侧声纳", 25000.0f, 45.0f, 135.0f, -135.0f, -45.0f, true};
-    m_sonarRangeConfigs[2] = SonarRangeConfig{2, "粗拖声纳", 35000.0f, 135.0f, 225.0f, 0.0f, 0.0f, false};
-    m_sonarRangeConfigs[3] = SonarRangeConfig{3, "细拖声纳", 40000.0f, 120.0f, 240.0f, 0.0f, 0.0f, false};
+    m_sonarRangeConfigs[0] = SonarRangeConfig{0, "艏端声纳", 40000.0f, -45.0f, 45.0f, 0.0f, 0.0f, false};
+    m_sonarRangeConfigs[1] = SonarRangeConfig{1, "舷侧声纳", 33000.0f, 45.0f, 135.0f, -135.0f, -45.0f, true};
+    m_sonarRangeConfigs[2] = SonarRangeConfig{2, "粗拖声纳", 45000.0f, 135.0f, 225.0f, 0.0f, 0.0f, false};
+    m_sonarRangeConfigs[3] = SonarRangeConfig{3, "细拖声纳", 80000.0f, 120.0f, 240.0f, 0.0f, 0.0f, false};
 
     // 2 *** 初始化界面，确保UI组件都被创建 ***
     initializeUI();
 
     // 3 *** 加载扩展配置 ***
-    loadExtendedConfig();
+//    loadExtendedConfig();
 
     // 4 创建声纳模型实例
     m_component = createComponent("sonar");
@@ -1534,10 +1534,10 @@ void MainWindow::syncThresholdFromModel()
 void MainWindow::onResetRangeConfig()
 {
     // 重置为默认值
-    m_sonarRangeConfigs[0].maxRange = 30000.0f;
-    m_sonarRangeConfigs[1].maxRange = 25000.0f;
-    m_sonarRangeConfigs[2].maxRange = 35000.0f;
-    m_sonarRangeConfigs[3].maxRange = 40000.0f;
+    m_sonarRangeConfigs[0].maxRange = 40000.0f;
+    m_sonarRangeConfigs[1].maxRange = 33000.0f;
+    m_sonarRangeConfigs[2].maxRange = 45000.0f;
+    m_sonarRangeConfigs[3].maxRange = 80000.0f;
 
     // 更新界面
     for (int sonarID = 0; sonarID < 4; sonarID++) {

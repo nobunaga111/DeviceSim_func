@@ -81,7 +81,7 @@ void SeaChartWidget::initializeOwnShip()
     ownShip.name = "本艇";  // 使用简单的中文字符串
     ownShip.position = m_chartCenter;
     ownShip.heading = 45.0;  // 确保初始航向为45度
-    ownShip.speed = 10.0;
+    ownShip.speed = 0.0;
     ownShip.color = Qt::red;
     ownShip.isOwnShip = true;
     ownShip.isVisible = true;
@@ -126,20 +126,20 @@ void SeaChartWidget::initializeSonarRanges()
     };
 
     QVector<SonarDefinition> sonarDefinitions = {
-        // 艏端声纳
-        {0, "艏端声纳", -45.0f, 45.0f, 30000.0f, QColor(0, 255, 0, 100), true},
+        // 艏端声纳 - 80%透明
+        {0, "艏端声纳", -45.0f, 45.0f, 30000.0f, QColor(0, 255, 0, 119), true},
 
-        // 舷侧声纳 - 右舷部分
-        {1, "舷侧声纳(右舷)", 45.0f, 135.0f, 25000.0f, QColor(0, 0, 255, 80), true},
+        // 舷侧声纳 - 右舷部分 - 80%透明
+        {1, "舷侧声纳(右舷)", 45.0f, 135.0f, 25000.0f, QColor(0, 0, 255, 119), true},
 
-        // 舷侧声纳 - 左舷部分
-        {1, "舷侧声纳(左舷)", -135.0f, -45.0f, 25000.0f, QColor(0, 0, 255, 80), true},
+        // 舷侧声纳 - 左舷部分 - 80%透明
+        {1, "舷侧声纳(左舷)", -135.0f, -45.0f, 25000.0f, QColor(0, 0, 255, 119), true},
 
-        // 粗拖声纳
-        {2, "粗拖声纳", 135.0f, 225.0f, 35000.0f, QColor(255, 255, 0, 100), true},
+        // 粗拖声纳 - 80%透明
+        {2, "粗拖声纳", 135.0f, 225.0f, 35000.0f, QColor(255, 255, 0, 119), true},
 
-        // 细拖声纳
-        {3, "细拖声纳", 120.0f, 240.0f, 40000.0f, QColor(255, 0, 255, 100), true}
+        // 细拖声纳 - 80%透明
+        {3, "细拖声纳", 120.0f, 240.0f, 40000.0f, QColor(255, 0, 255, 119), true}
     };
 
     for (const auto& sonarDef : sonarDefinitions) {
@@ -155,7 +155,7 @@ void SeaChartWidget::initializeSonarRanges()
         m_sonarRanges.append(range);
     }
 
-    qDebug() << "Initialized" << m_sonarRanges.size() << "default sonar ranges";
+    qDebug() << "Initialized" << m_sonarRanges.size() << "default sonar ranges with 80% transparency";
 }
 void SeaChartWidget::createContextMenu()
 {
@@ -526,13 +526,13 @@ void SeaChartWidget::validateSonarRanges()
     for (auto& range : m_sonarRanges) {
         if (range.color.alpha() == 0) {
             qDebug() << "Warning: Sonar range" << range.sonarId << "has invalid color, fixing";
-            // 重新设置颜色
+            // 重新设置颜色 - 统一80%透明度
             switch (range.sonarId) {
-                case 0: range.color = QColor(0, 255, 0, 100); break;
-                case 1: range.color = QColor(0, 0, 255, 80); break;
-                case 2: range.color = QColor(255, 255, 0, 100); break;
-                case 3: range.color = QColor(255, 0, 255, 100); break;
-                default: range.color = QColor(128, 128, 128, 100); break;
+                case 0: range.color = QColor(0, 255, 0, 119); break;      // 艏端声纳
+                case 1: range.color = QColor(0, 0, 255, 119); break;      // 舷侧声纳
+                case 2: range.color = QColor(255, 255, 0, 119); break;    // 粗拖声纳
+                case 3: range.color = QColor(255, 0, 255, 119); break;    // 细拖声纳
+                default: range.color = QColor(128, 128, 128, 119); break; // 默认颜色
             }
             needUpdate = true;
         }
@@ -542,6 +542,7 @@ void SeaChartWidget::validateSonarRanges()
         update();
     }
 }
+
 
 QVector<ChartPlatform> SeaChartWidget::getTargetPlatforms() const
 {
@@ -1210,7 +1211,7 @@ void SeaChartWidget::onAddTargetShip()
         newTarget.name = name;
         newTarget.position = mouseGeoPos;
         newTarget.heading = 0.0;
-        newTarget.speed = 12.0;
+        newTarget.speed = 0.0;
         newTarget.color = Qt::cyan;
         newTarget.isOwnShip = false;
         newTarget.isVisible = true;
@@ -1219,7 +1220,7 @@ void SeaChartWidget::onAddTargetShip()
         qDebug() << "Added target ship:" << name << "at position:" << mouseGeoPos;
     }
 
-    // *** 恢复声纳状态（如果需要） ***
+    // *** 恢复声纳状态 ***
     for (int i = 0; i < m_sonarRanges.size() && i < sonarVisibility.size(); i++) {
         if (m_sonarRanges[i].isVisible != sonarVisibility[i]) {
             m_sonarRanges[i].isVisible = sonarVisibility[i];
@@ -2145,11 +2146,11 @@ QColor SeaChartWidget::getSonarColor(int sonarId) const
 {
     // 根据声纳ID返回对应的颜色
     switch (sonarId) {
-        case 0: return QColor(0, 255, 0, 100);      // 艏端声纳 - 绿色
-        case 1: return QColor(0, 0, 255, 80);       // 舷侧声纳 - 蓝色
-        case 2: return QColor(255, 255, 0, 100);    // 粗拖声纳 - 黄色
-        case 3: return QColor(255, 0, 255, 100);    // 细拖声纳 - 洋红色
-        default: return QColor(128, 128, 128, 100); // 默认颜色 - 灰色
+        case 0: return QColor(0, 255, 0, 119);      // 艏端声纳 - 绿色，80%透明
+        case 1: return QColor(0, 0, 255, 119);      // 舷侧声纳 - 蓝色，80%透明
+        case 2: return QColor(255, 255, 0, 119);    // 粗拖声纳 - 黄色，80%透明
+        case 3: return QColor(255, 0, 255, 119);    // 细拖声纳 - 洋红色，80%透明
+        default: return QColor(128, 128, 128, 119); // 默认颜色 - 灰色，80%透明
     }
 }
 

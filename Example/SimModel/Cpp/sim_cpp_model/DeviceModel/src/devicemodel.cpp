@@ -41,7 +41,7 @@ DeviceModel::DeviceModel()
     LOG_INFO("Sonar model created with multi-target equation calculation capability");
 
     // 尝试加载配置文件，如果不存在则使用默认值
-    loadThresholdConfig("threshold_config.ini");
+    loadExtendedConfig("threshold_config.ini");
 
     LOG_INFO("声纳模型已创建，支持可配置探测阈值");
 }
@@ -1201,15 +1201,15 @@ void DeviceModel::loadExtendedConfig(const std::string& filename)
                 }
             }
             // 处理声纳最大显示距离设置
-            else if (currentSection == "SonarRanges") {
-                if (key.substr(0, 5) == "Sonar" && key.substr(6) == "_MaxRange") {
-                    int sonarID = std::stoi(key.substr(5, 1));
-                    if (sonarID >= 0 && sonarID < 4) {
-                        m_sonarMaxDisplayRanges[sonarID] = std::stof(value);
-                        LOG_INFOF("加载声纳%d最大显示距离: %.0f米", sonarID, std::stof(value));
-                    }
-                }
-            }
+//            else if (currentSection == "SonarRanges") {
+//                if (key.substr(0, 5) == "Sonar" && key.substr(6) == "_MaxRange") {
+//                    int sonarID = std::stoi(key.substr(5, 1));
+//                    if (sonarID >= 0 && sonarID < 4) {
+//                        m_sonarMaxDisplayRanges[sonarID] = std::stof(value);
+//                        LOG_INFOF("加载声纳%d最大显示距离: %.0f米", sonarID, std::stof(value));
+//                    }
+//                }
+//            }
         }
 
         configFile.close();
