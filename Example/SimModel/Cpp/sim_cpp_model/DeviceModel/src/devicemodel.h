@@ -16,6 +16,21 @@
 #include <cmath>
 #include <algorithm>
 
+#include <chrono>
+#include <functional>
+
+// 错误定位宏 - 自动获取文件名、类名、方法名、行号
+#define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : (strrchr(__FILE__, '\\') ? strrchr(__FILE__, '\\') + 1 : __FILE__))
+#define LOG_CRASH(format, ...) \
+    LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] " format, __FILENAME__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define LOG_SAFE_ERROR(format, ...) \
+    LOG_ERRORF("[SAFE_ERROR][%s::%s:%d] " format, __FILENAME__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define LOG_SAFE_WARN(format, ...) \
+    LOG_WARNF("[SAFE_WARN][%s::%s:%d] " format, __FILENAME__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define LOG_SAFE_INFO(format, ...) \
+    LOG_INFOF("[SAFE_INFO][%s::%s:%d] " format, __FILENAME__, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+
+
 // 前向声明
 //class QMap;
 //template<typename T> class QMap;
@@ -368,7 +383,9 @@ private:
      * @brief 更新传播后连续声数据缓存（多目标版本）
      * @param simMessage 接收到的传播声消息
      */
+    void updateMultiTargetPropagatedSoundCache_yuan(CSimMessage* simMessage);
     void updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage);
+    void updateMultiTargetPropagatedSoundCache_Enhanced(CSimMessage* simMessage);
 
     /**
      * @brief 更新平台区噪声数据缓存
@@ -503,7 +520,7 @@ private:
     int64 m_lastPropagatedSoundLogTime = 0;  // 上次打印传播声日志的时间
     int64 m_lastEnvironmentNoiseLogTime = 0;  // 上次打印环境噪声日志的时间
     int64 m_lastPlatformSelfSoundLogTime = 0; // 上次打印平台自噪声日志的时间
-    static const int64 PROPAGATED_SOUND_LOG_INTERVAL = 5000; // 5秒打印间隔
+    static const int64 PROPAGATED_SOUND_LOG_INTERVAL = 1000; // 5秒打印间隔
 
 
 
@@ -517,8 +534,85 @@ private:
        {3, 43.0}   // 细拖声纳默认阈值
     };
 
+
+    // 调试统计信息
+    struct DebugStats {
+        int totalMessagesReceived = 0;
+        int successfulProcessings = 0;
+        int failedProcessings = 0;
+        int64 lastSuccessfulTime = 0;
+        int64 lastFailedTime = 0;
+        std::string lastErrorMsg;
+    } m_debugStats;
+
+    // 安全的数据访问函数
+    bool safeAccessSpectrumData(const C_PropagatedContinuousSoundStruct& soundData,
+                               int index, float& value) const;
+
+
+
+
+
+
+
+    // 全局保护状态
+    struct GlobalProtectionState {
+        bool isProtectionEnabled = true;
+        int totalExceptions = 0;
+        int totalRecoveries = 0;
+        int maxExceptionsAllowed = 1000;
+        std::chrono::time_point<std::chrono::steady_clock> lastExceptionTime;
+        std::string lastExceptionLocation;
+
+        // 性能监控
+        std::chrono::time_point<std::chrono::steady_clock> functionStartTime;
+        int maxExecutionTimeMs = 30000; // 30秒超时
+
+        // 内存使用监控
+        size_t maxMemoryUsage = 0;
+        size_t currentMemoryEstimate = 0;
+    } m_globalProtection;
+
+    // 崩溃计数器
+    mutable int m_crashProtectionCount = 0;
+    mutable int m_maxCrashProtections = 100;
+
+    // 安全访问辅助函数声明
+    bool safeAccessPointer(const void* ptr, size_t size, const char* ptrName,
+                          const char* fileName, const char* funcName, int line) const;
+    bool safeAccessSpectrumArray(const float* spectrumData, int index, float& outValue,
+                                const char* fileName, const char* funcName, int line) const;
+    bool safeAccessSTLContainer(const std::list<C_PropagatedContinuousSoundStruct>& container,
+                               size_t& outSize, const char* fileName, const char* funcName, int line) const;
+    bool safeIterateSTLContainer(const std::list<C_PropagatedContinuousSoundStruct>& container,
+                                std::function<bool(const C_PropagatedContinuousSoundStruct&, int)> processor,
+                                const char* fileName, const char* funcName, int line) const;
+
+    // 错误恢复和清理函数
+    void emergencyCleanup(const char* reason, const char* fileName, const char* funcName, int line);
+    void safeResetTargetCache(int sonarID, const char* fileName, const char* funcName, int line);
+
+    // 安全执行包装器
+    template<typename Func>
+    bool safeExecute(Func&& func, const char* funcName, const char* fileName, int line);
+
+    // 保护状态检查
+    bool checkExecutionTimeout(const char* funcName, const char* fileName, int line);
+    void startExecutionTimer();
+    bool checkMemoryUsage(const char* funcName, const char* fileName, int line);
+    void updateMemoryEstimate();
+    bool checkExceptionLimit(const char* funcName, const char* fileName, int line);
+    void recordException(const std::string& exceptionInfo, const char* fileName, const char* funcName, int line);
+
+
 };
 
-
+// 安全访问宏
+#define SAFE_ACCESS_PTR(ptr, size, ptrName) \
+    safeAccessPointer(ptr, size, ptrName, __FILENAME__, __FUNCTION__, __LINE__)
+#define SAFE_ACCESS_SPECTRUM(spectrumData, index, outValue) \
+    safeAccessSpectrumArray(spectrumData, index, outValue, __FILENAME__, __FUNCTION__, __LINE__)
+#define SAFE_ACCESS_CONTAINER(container, outSize) \
+    safeAccessSTLContainer(container, outSize, __FILENAME__, __FUNCTION__, __LINE__)
 
 #endif // DEVICEMODEL_H

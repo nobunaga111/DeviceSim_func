@@ -16,8 +16,44 @@
 
 constexpr const double DeviceModel::MAX_FREQUENCY_KHZ;
 
+
+
+#include <windows.h>
+#include <dbghelp.h>
+// 异常过滤器函数
+LONG WINAPI CustomExceptionFilter(EXCEPTION_POINTERS* ExceptionInfo)
+{
+    LOG_ERRORF("=== CRASH DETECTED ===");
+    LOG_ERRORF("Exception Code: 0x%08X", ExceptionInfo->ExceptionRecord->ExceptionCode);
+    LOG_ERRORF("Exception Address: %p", ExceptionInfo->ExceptionRecord->ExceptionAddress);
+
+    // 尝试获取更多信息
+    CONTEXT* context = ExceptionInfo->ContextRecord;
+    #ifdef _WIN64
+    LOG_ERRORF("RAX: %016llX RBX: %016llX RCX: %016llX RDX: %016llX",
+              context->Rax, context->Rbx, context->Rcx, context->Rdx);
+    LOG_ERRORF("RSI: %016llX RDI: %016llX RBP: %016llX RSP: %016llX",
+              context->Rsi, context->Rdi, context->Rbp, context->Rsp);
+    LOG_ERRORF("RIP: %016llX", context->Rip);
+    #else
+    LOG_ERRORF("EAX: %08X EBX: %08X ECX: %08X EDX: %08X",
+              context->Eax, context->Ebx, context->Ecx, context->Edx);
+    LOG_ERRORF("ESI: %08X EDI: %08X EBP: %08X ESP: %08X",
+              context->Esi, context->Edi, context->Ebp, context->Esp);
+    LOG_ERRORF("EIP: %08X", context->Eip);
+    #endif
+
+    // 刷新日志确保写入文件
+    Logger::getInstance().flush();
+
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
 DeviceModel::DeviceModel()
 {
+    // 设置全局异常处理器
+    SetUnhandledExceptionFilter(CustomExceptionFilter);
+
     m_agent = nullptr; // CSimModelAgentBase 代理对象
 
     m_initialized = false; // 声纳状态信息 初始化标志
@@ -222,7 +258,59 @@ void DeviceModel::onMessage(CSimMessage* simMessage)
 
         // 使用新的多目标处理方法
         if (topic == MSG_PropagatedContinuousSound) {
-            updateMultiTargetPropagatedSoundCache(simMessage);
+            m_debugStats.totalMessagesReceived++;
+
+            LOG_INFOF("=== MSG_PropagatedContinuousSound RECEIVED (#%d) ===",
+                     m_debugStats.totalMessagesReceived);
+            LOG_INFOF("Message details:");
+            LOG_INFOF("  - Time: %lld", simMessage->time);
+            LOG_INFOF("  - Sender: %d", simMessage->sender);
+            LOG_INFOF("  - Length: %d", simMessage->length);
+            LOG_INFOF("  - DataFormat: %d", simMessage->dataFormat);
+            LOG_INFOF("  - Data ptr: %p", simMessage->data);
+
+            // 验证数据长度是否合理
+            if (simMessage->length < sizeof(CMsg_PropagatedContinuousSoundListStruct)) {
+                LOG_ERRORF("CRITICAL: Message length too small! Expected >= %zu, got %d",
+                          sizeof(CMsg_PropagatedContinuousSoundListStruct), simMessage->length);
+                m_debugStats.failedProcessings++;
+                m_debugStats.lastFailedTime = simMessage->time;
+                m_debugStats.lastErrorMsg = "Message length too small";
+                return;
+            }
+
+            // 内存地址对齐检查
+            if (reinterpret_cast<uintptr_t>(simMessage->data) % alignof(CMsg_PropagatedContinuousSoundListStruct) != 0) {
+                LOG_WARNF("WARNING: Data pointer not properly aligned for struct access: %p", simMessage->data);
+            }
+
+            try {
+                updateMultiTargetPropagatedSoundCache(simMessage); //
+
+
+                m_debugStats.successfulProcessings++;
+                m_debugStats.lastSuccessfulTime = simMessage->time;
+                LOG_INFOF("✓ MSG_PropagatedContinuousSound processed successfully");
+            } catch (const std::exception& e) {
+                m_debugStats.failedProcessings++;
+                m_debugStats.lastFailedTime = simMessage->time;
+                m_debugStats.lastErrorMsg = e.what();
+                LOG_ERRORF("CRASH: Exception in updateMultiTargetPropagatedSoundCache: %s", e.what());
+            } catch (...) {
+                m_debugStats.failedProcessings++;
+                m_debugStats.lastFailedTime = simMessage->time;
+                m_debugStats.lastErrorMsg = "Unknown exception";
+                LOG_ERRORF("CRASH: Unknown exception in updateMultiTargetPropagatedSoundCache");
+            }
+
+            // 打印调试统计信息
+            LOG_INFOF("Debug Stats: Total=%d, Success=%d, Failed=%d, Success Rate=%.1f%%",
+                     m_debugStats.totalMessagesReceived, m_debugStats.successfulProcessings,
+                     m_debugStats.failedProcessings,
+                     (m_debugStats.totalMessagesReceived > 0 ?
+                      100.0 * m_debugStats.successfulProcessings / m_debugStats.totalMessagesReceived : 0.0));
+
+            return; // 重要：在这里直接返回，避免继续执行原来的处理逻辑
         }
 
         else if (topic == MSG_PropagatedActivePulseSound) {
@@ -243,39 +331,412 @@ void DeviceModel::onMessage(CSimMessage* simMessage)
     }
 }
 
-void DeviceModel::updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage)
+// 全面的异常捕获、参数验证和crash定位
+void DeviceModel::updateMultiTargetPropagatedSoundCache_yuan(CSimMessage* simMessage)
 {
-    if (!simMessage || !simMessage->data) {
-        LOG_WARN("Invalid propagated sound message");
+    LOG_INFOF("=== ENTERING updateMultiTargetPropagatedSoundCache ===");
+    LOG_INFOF("Function entry - simMessage ptr: %p", simMessage);
+
+    try {
+        // ========== 第一层检查：基本参数验证 ==========
+        if (!simMessage) {
+            LOG_ERRORF("CRITICAL: simMessage is NULL!");
+            return;
+        }
+        LOG_INFOF("✓ simMessage is valid: %p", simMessage);
+
+        if (!simMessage->data) {
+            LOG_ERRORF("CRITICAL: simMessage->data is NULL!");
+            return;
+        }
+        LOG_INFOF("✓ simMessage->data is valid: %p", simMessage->data);
+        LOG_INFOF("✓ simMessage->length: %d", simMessage->length);
+        LOG_INFOF("✓ simMessage->time: %lld", simMessage->time);
+        LOG_INFOF("✓ simMessage->topic: %s", simMessage->topic);
+
+        // ========== 第二层检查：数据转换和验证 ==========
+        LOG_INFOF("--- Attempting reinterpret_cast ---");
+        const CMsg_PropagatedContinuousSoundListStruct* soundListStruct = nullptr;
+
+        try {
+            soundListStruct = reinterpret_cast<const CMsg_PropagatedContinuousSoundListStruct*>(simMessage->data);
+            LOG_INFOF("✓ reinterpret_cast successful: %p", soundListStruct);
+        } catch (const std::exception& e) {
+            LOG_ERRORF("CRASH: reinterpret_cast failed with exception: %s", e.what());
+            return;
+        } catch (...) {
+            LOG_ERRORF("CRASH: reinterpret_cast failed with unknown exception");
+            return;
+        }
+
+        if (!soundListStruct) {
+            LOG_ERRORF("CRITICAL: soundListStruct is NULL after cast!");
+            return;
+        }
+
+        // ========== 第三层检查：访问list容器 ==========
+        LOG_INFOF("--- Accessing propagatedContinuousList ---");
+        size_t listSize = 0;
+        try {
+            listSize = soundListStruct->propagatedContinuousList.size();
+            LOG_INFOF("✓ List size accessed successfully: %zu", listSize);
+        } catch (const std::exception& e) {
+            LOG_ERRORF("CRASH: Failed to access list size with exception: %s", e.what());
+            return;
+        } catch (...) {
+            LOG_ERRORF("CRASH: Failed to access list size with unknown exception");
+            return;
+        }
+
+        LOG_INFOF("Updating multi-target propagated sound cache, sound count: %zu", listSize);
+
+        int64 currentTime = simMessage->time;
+        LOG_INFOF("Current time set to: %lld", currentTime);
+
+        // ========== 第四层检查：处理空列表情况 ==========
+        if (listSize == 0) {
+            LOG_INFO("Received empty target list, clearing all sonar target data");
+
+            try {
+                for (int sonarID = 0; sonarID < 4; sonarID++) {
+                    LOG_INFOF("Clearing sonar %d data...", sonarID);
+                    m_multiTargetCache.sonarTargetsData[sonarID].clear();
+                    m_multiTargetCache.multiTargetEquationResults[sonarID].clear();
+                    LOG_INFOF("✓ Sonar %d data cleared", sonarID);
+                }
+                LOG_INFO("✓ All sonar target data cleared successfully");
+                return;
+            } catch (const std::exception& e) {
+                LOG_ERRORF("CRASH: Failed to clear sonar data with exception: %s", e.what());
+                return;
+            } catch (...) {
+                LOG_ERRORF("CRASH: Failed to clear sonar data with unknown exception");
+                return;
+            }
+        }
+
+        // ========== 第五层检查：清理过期数据 ==========
+        LOG_INFOF("--- Cleaning expired data for all sonars ---");
+        try {
+            for (int sonarID = 0; sonarID < 4; sonarID++) {
+                LOG_INFOF("Processing sonar %d expired data cleanup...", sonarID);
+
+                auto& targetsData = m_multiTargetCache.sonarTargetsData[sonarID];
+                size_t beforeSize = targetsData.size();
+                LOG_INFOF("Sonar %d targets before cleanup: %zu", sonarID, beforeSize);
+
+                // 移除过期数据（超过5秒未更新）
+                targetsData.erase(
+                    std::remove_if(targetsData.begin(), targetsData.end(),
+                        [currentTime](const TargetData& target) {
+                            return (currentTime - target.lastUpdateTime) > DATA_UPDATE_INTERVAL_MS;
+                        }),
+                    targetsData.end()
+                );
+
+                size_t afterSize = targetsData.size();
+                LOG_INFOF("✓ Sonar %d targets after cleanup: %zu (removed: %zu)",
+                         sonarID, afterSize, beforeSize - afterSize);
+            }
+            LOG_INFOF("✓ All sonars expired data cleanup completed");
+        } catch (const std::exception& e) {
+            LOG_ERRORF("CRASH: Failed during expired data cleanup with exception: %s", e.what());
+            return;
+        } catch (...) {
+            LOG_ERRORF("CRASH: Failed during expired data cleanup with unknown exception");
+            return;
+        }
+
+        // ========== 第六层检查：遍历目标数据 ==========
+        LOG_INFOF("--- Processing target data iteration ---");
+        int targetIndex = 0;
+
+        try {
+            for (const auto& soundData : soundListStruct->propagatedContinuousList) {
+                LOG_INFOF("=== Processing target index %d ===", targetIndex);
+
+                // ========== 检查soundData的各个字段 ==========
+                LOG_INFOF("Target %d - arrivalSideAngle: %.3f°", targetIndex, soundData.arrivalSideAngle);
+                LOG_INFOF("Target %d - arrivalPitchAngle: %.3f°", targetIndex, soundData.arrivalPitchAngle);
+                LOG_INFOF("Target %d - targetDistance: %.3f m", targetIndex, soundData.targetDistance);
+                LOG_INFOF("Target %d - platType: %d", targetIndex, soundData.platType);
+
+                // ========== 验证频谱数据访问 ==========
+                LOG_INFOF("--- Checking spectrum data for target %d ---", targetIndex);
+                try {
+                    // 检查频谱数据的前几个和后几个元素
+                    LOG_INFOF("Target %d spectrum[0]: %.6f", targetIndex, soundData.spectrumData[0]);
+                    LOG_INFOF("Target %d spectrum[1]: %.6f", targetIndex, soundData.spectrumData[1]);
+                    LOG_INFOF("Target %d spectrum[2]: %.6f", targetIndex, soundData.spectrumData[2]);
+
+                    // 检查中间位置
+                    LOG_INFOF("Target %d spectrum[2648]: %.6f", targetIndex, soundData.spectrumData[2648]); // 中间位置
+
+                    // 检查最后几个元素（这里最容易出现越界）
+                    LOG_INFOF("Target %d spectrum[5293]: %.6f", targetIndex, soundData.spectrumData[5293]);
+                    LOG_INFOF("Target %d spectrum[5294]: %.6f", targetIndex, soundData.spectrumData[5294]);
+                    LOG_INFOF("Target %d spectrum[5295]: %.6f", targetIndex, soundData.spectrumData[5295]); // 最后一个元素
+
+                    LOG_INFOF("✓ Target %d spectrum data access validation passed", targetIndex);
+                } catch (const std::exception& e) {
+                    LOG_ERRORF("CRASH: Failed to access spectrum data for target %d with exception: %s",
+                              targetIndex, e.what());
+                    return;
+                } catch (...) {
+                    LOG_ERRORF("CRASH: Failed to access spectrum data for target %d with unknown exception", targetIndex);
+                    return;
+                }
+
+                // 为每个目标分配一个唯一ID
+                int targetId = targetIndex + 1000; // 从1000开始编号避免与其他ID冲突
+
+                // 获取目标的绝对方位角和距离
+                float targetBearing = soundData.arrivalSideAngle;  // 这是绝对方位角
+                float targetDistance = soundData.targetDistance;
+
+                LOG_INFOF("Processing target %d: bearing=%.1f°, distance=%.1fm",
+                         targetId, targetBearing, targetDistance);
+
+                // ========== 第七层检查：为每个声纳处理目标 ==========
+                for (int sonarID = 0; sonarID < 4; sonarID++) {
+                    LOG_INFOF("--- Processing target %d for sonar %d ---", targetId, sonarID);
+
+                    try {
+                        // 检查声纳是否启用
+                        auto stateIt = m_sonarStates.find(sonarID);
+                        if (stateIt == m_sonarStates.end()) {
+                            LOG_INFOF("Sonar %d state not found, skipping", sonarID);
+                            continue;
+                        }
+
+                        if (!stateIt->second.arrayWorkingState || !stateIt->second.passiveWorkingState) {
+                            LOG_INFOF("Sonar %d not enabled (array:%d, passive:%d), skipping",
+                                     sonarID, stateIt->second.arrayWorkingState, stateIt->second.passiveWorkingState);
+                            continue; // 声纳未启用，跳过
+                        }
+
+                        // 使用修复后的角度范围检查方法
+                        if (!isTargetInSonarRange(sonarID, targetBearing, targetDistance)) {
+                            LOG_INFOF("Target %d not in sonar %d range, skipping", targetId, sonarID);
+                            continue; // 不在探测范围内，跳过
+                        }
+
+                        LOG_INFOF("✓ Target %d is valid for sonar %d", targetId, sonarID);
+
+                        auto& targetsData = m_multiTargetCache.sonarTargetsData[sonarID];
+                        LOG_INFOF("Sonar %d current targets count: %zu", sonarID, targetsData.size());
+
+                        // 检查是否已达到最大目标数限制
+                        if (targetsData.size() >= MAX_TARGETS_PER_SONAR) {
+                            LOG_INFOF("Sonar %d reached max targets (%d), checking for replacement...",
+                                     sonarID, MAX_TARGETS_PER_SONAR);
+
+                            // 如果新目标距离更近，则替换最远的目标
+                            auto farthestIt = std::max_element(targetsData.begin(), targetsData.end(),
+                                [](const TargetData& a, const TargetData& b) {
+                                    return a.targetDistance < b.targetDistance;
+                                });
+
+                            if (farthestIt != targetsData.end() && targetDistance < farthestIt->targetDistance) {
+                                LOG_INFOF("Replacing farthest target (distance=%.1f) with closer target (distance=%.1f) for sonar %d",
+                                          farthestIt->targetDistance, targetDistance, sonarID);
+                                targetsData.erase(farthestIt);
+                            } else {
+                                LOG_INFOF("Sonar %d target limit reached, skipping target %d", sonarID, targetId);
+                                continue; // 新目标不够近，跳过
+                            }
+                        }
+
+                        // 查找是否已存在相同目标ID的数据
+                        auto existingIt = std::find_if(targetsData.begin(), targetsData.end(),
+                            [targetId](const TargetData& target) {
+                                return target.targetId == targetId;
+                            });
+
+                        LOG_INFOF("--- Creating target data for target %d sonar %d ---", targetId, sonarID);
+
+                        TargetData targetData;
+                        targetData.targetId = targetId;
+                        targetData.targetDistance = targetDistance;
+                        targetData.targetBearing = targetBearing;
+                        targetData.lastUpdateTime = currentTime;
+                        targetData.isValid = true;
+
+                        // ========== 第八层检查：频谱数据复制 ==========
+                        LOG_INFOF("--- Copying spectrum data for target %d sonar %d ---", targetId, sonarID);
+                        try {
+                            targetData.propagatedSpectrum.reserve(SPECTRUM_DATA_SIZE);
+                            LOG_INFOF("Reserved spectrum vector for %d elements", SPECTRUM_DATA_SIZE);
+
+                            for (int i = 0; i < SPECTRUM_DATA_SIZE; i++) {
+                                // 在关键位置进行额外检查
+                                if (i == 0 || i == SPECTRUM_DATA_SIZE/2 || i == SPECTRUM_DATA_SIZE-1) {
+                                    LOG_INFOF("Copying spectrum[%d] = %.6f", i, soundData.spectrumData[i]);
+                                }
+                                targetData.propagatedSpectrum.push_back(soundData.spectrumData[i]);
+                            }
+                            LOG_INFOF("✓ Successfully copied %d spectrum elements", SPECTRUM_DATA_SIZE);
+
+                        } catch (const std::exception& e) {
+                            LOG_ERRORF("CRASH: Failed to copy spectrum data for target %d sonar %d with exception: %s",
+                                      targetId, sonarID, e.what());
+                            return;
+                        } catch (...) {
+                            LOG_ERRORF("CRASH: Failed to copy spectrum data for target %d sonar %d with unknown exception",
+                                      targetId, sonarID);
+                            return;
+                        }
+
+                        // ========== 第九层检查：更新目标数据 ==========
+                        LOG_INFOF("--- Updating target data for target %d sonar %d ---", targetId, sonarID);
+                        try {
+                            if (existingIt != targetsData.end()) {
+                                // 更新现有目标数据
+                                LOG_INFOF("Updating existing target %d for sonar %d", targetId, sonarID);
+                                *existingIt = targetData;
+                            } else {
+                                // 添加新目标数据
+                                LOG_INFOF("Adding new target %d for sonar %d", targetId, sonarID);
+                                targetsData.push_back(targetData);
+                            }
+                            LOG_INFOF("✓ Target %d data updated successfully for sonar %d", targetId, sonarID);
+
+                        } catch (const std::exception& e) {
+                            LOG_ERRORF("CRASH: Failed to update target data for target %d sonar %d with exception: %s",
+                                      targetId, sonarID, e.what());
+                            return;
+                        } catch (...) {
+                            LOG_ERRORF("CRASH: Failed to update target data for target %d sonar %d with unknown exception",
+                                      targetId, sonarID);
+                            return;
+                        }
+
+                    } catch (const std::exception& e) {
+                        LOG_ERRORF("CRASH: Exception in sonar %d processing for target %d: %s",
+                                  sonarID, targetId, e.what());
+                        return;
+                    } catch (...) {
+                        LOG_ERRORF("CRASH: Unknown exception in sonar %d processing for target %d",
+                                  sonarID, targetId);
+                        return;
+                    }
+                }
+
+                targetIndex++;
+                LOG_INFOF("✓ Completed processing target index %d", targetIndex - 1);
+
+            } // end for each soundData
+
+        } catch (const std::exception& e) {
+            LOG_ERRORF("CRASH: Exception during target iteration at index %d: %s", targetIndex, e.what());
+            return;
+        } catch (...) {
+            LOG_ERRORF("CRASH: Unknown exception during target iteration at index %d", targetIndex);
+            return;
+        }
+
+        LOG_INFOF("✓ Successfully processed all %d targets", targetIndex);
+        LOG_INFOF("=== EXITING updateMultiTargetPropagatedSoundCache SUCCESSFULLY ===");
+
+    } catch (const std::exception& e) {
+        LOG_ERRORF("CRASH: Top-level exception in updateMultiTargetPropagatedSoundCache: %s", e.what());
+
+        // 尝试获取堆栈跟踪信息
+        #ifdef _WIN32
+        // Windows下的堆栈跟踪
+        LOG_ERRORF("Stack trace information may be available in debugger");
+        #endif
+
+        return;
+    } catch (...) {
+        LOG_ERRORF("CRASH: Top-level unknown exception in updateMultiTargetPropagatedSoundCache");
+        return;
+    }
+}
+
+
+// 增强版本的updateMultiTargetPropagatedSoundCache - 带内存保护
+/**
+void DeviceModel::updateMultiTargetPropagatedSoundCache_Enhanced(CSimMessage* simMessage)
+{
+    LOG_INFOF("=== ENHANCED updateMultiTargetPropagatedSoundCache START ===");
+
+    // 使用原有的调试版本，但增加额外的内存保护检查
+
+    // 验证simMessage基本结构
+    if (!simMessage) {
+        LOG_ERRORF("FATAL: simMessage is NULL");
+        __debugbreak(); // 在Windows下触发调试器断点
         return;
     }
 
-    const CMsg_PropagatedContinuousSoundListStruct* soundListStruct =
-        reinterpret_cast<const CMsg_PropagatedContinuousSoundListStruct*>(simMessage->data);
+    // 检查内存是否可读
+    if (IsBadReadPtr(simMessage, sizeof(CSimMessage))) {
+        LOG_ERRORF("FATAL: simMessage memory is not readable");
+        return;
+    }
 
-    LOG_INFOF("Updating multi-target propagated sound cache, sound count: %zu",
-              soundListStruct->propagatedContinuousList.size());
+    if (!simMessage->data) {
+        LOG_ERRORF("FATAL: simMessage->data is NULL");
+        return;
+    }
+
+    // 检查data内存是否可读
+    if (IsBadReadPtr(simMessage->data, simMessage->length)) {
+        LOG_ERRORF("FATAL: simMessage->data memory is not readable, length=%d", simMessage->length);
+        return;
+    }
+
+    // 尝试安全的类型转换
+    const CMsg_PropagatedContinuousSoundListStruct* soundListStruct = nullptr;
+
+    __try {
+        soundListStruct = reinterpret_cast<const CMsg_PropagatedContinuousSoundListStruct*>(simMessage->data);
+    }
+    __except(EXCEPTION_EXECUTE_HANDLER) {
+        LOG_ERRORF("FATAL: Exception during reinterpret_cast, exception code: 0x%x", GetExceptionCode());
+        return;
+    }
+
+    if (!soundListStruct) {
+        LOG_ERRORF("FATAL: soundListStruct is NULL after cast");
+        return;
+    }
+
+    // 尝试安全访问list大小
+    size_t listSize = 0;
+    __try {
+        listSize = soundListStruct->propagatedContinuousList.size();
+        LOG_INFOF("✓ List size: %zu", listSize);
+    }
+    __except(EXCEPTION_EXECUTE_HANDLER) {
+        LOG_ERRORF("FATAL: Exception accessing list size, exception code: 0x%x", GetExceptionCode());
+        return;
+    }
+
+    // 如果列表过大，可能是数据损坏
+    if (listSize > 1000) { // 合理的上限
+        LOG_ERRORF("SUSPICIOUS: List size too large: %zu, possible data corruption", listSize);
+        return;
+    }
 
     int64 currentTime = simMessage->time;
 
-    // 修改：如果接收到空的目标列表，立即清空所有声纳的目标数据
-    if (soundListStruct->propagatedContinuousList.empty()) {
-        LOG_INFO("Received empty target list, clearing all sonar target data");
-
+    // 处理空列表
+    if (listSize == 0) {
+        LOG_INFO("Empty list, clearing data");
         for (int sonarID = 0; sonarID < 4; sonarID++) {
             m_multiTargetCache.sonarTargetsData[sonarID].clear();
             m_multiTargetCache.multiTargetEquationResults[sonarID].clear();
         }
-
-//        LOG_INFO("All sonar target data cleared");
         return;
     }
 
-    // 为每个声纳清空过期的目标数据
+    // 清理过期数据
     for (int sonarID = 0; sonarID < 4; sonarID++) {
         auto& targetsData = m_multiTargetCache.sonarTargetsData[sonarID];
+        size_t beforeSize = targetsData.size();
 
-        // 移除过期数据（超过5秒未更新）
         targetsData.erase(
             std::remove_if(targetsData.begin(), targetsData.end(),
                 [currentTime](const TargetData& target) {
@@ -283,97 +744,534 @@ void DeviceModel::updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage)
                 }),
             targetsData.end()
         );
+
+        LOG_INFOF("Sonar %d: cleaned %zu expired targets", sonarID, beforeSize - targetsData.size());
     }
 
-    // 处理新的目标数据
+    // 处理每个目标 - 使用安全的迭代器
     int targetIndex = 0;
-    for (const auto& soundData : soundListStruct->propagatedContinuousList) {
-        // 为每个目标分配一个唯一ID
-        int targetId = targetIndex + 1000; // 从1000开始编号避免与其他ID冲突
 
-        // 获取目标的绝对方位角和距离
-        float targetBearing = soundData.arrivalSideAngle;  // 这是绝对方位角
-        float targetDistance = soundData.targetDistance;
+    __try {
+        for (auto it = soundListStruct->propagatedContinuousList.begin();
+             it != soundListStruct->propagatedContinuousList.end(); ++it) {
 
-        LOG_INFOF("Processing target %d: bearing=%.1f°, distance=%.1fm",
-                  targetId, targetBearing, targetDistance);
+            LOG_INFOF("=== Processing target %d ===", targetIndex);
 
-        // 为每个声纳判断该目标是否在探测范围内
-        for (int sonarID = 0; sonarID < 4; sonarID++) {
-            // 检查声纳是否启用
-            auto stateIt = m_sonarStates.find(sonarID);
-            if (stateIt == m_sonarStates.end() ||
-                !stateIt->second.arrayWorkingState ||
-                !stateIt->second.passiveWorkingState) {
-                continue; // 声纳未启用，跳过
+            const auto& soundData = *it;
+
+            // 详细打印目标数据
+            LOG_INFOF("Target %d data:", targetIndex);
+            LOG_INFOF("  - arrivalSideAngle: %.6f", soundData.arrivalSideAngle);
+            LOG_INFOF("  - arrivalPitchAngle: %.6f", soundData.arrivalPitchAngle);
+            LOG_INFOF("  - targetDistance: %.6f", soundData.targetDistance);
+            LOG_INFOF("  - platType: %d", soundData.platType);
+
+            // 验证数据合理性
+            if (soundData.targetDistance < 0 || soundData.targetDistance > 1000000) {
+                LOG_WARNF("SUSPICIOUS: Target %d distance out of range: %.2f",
+                         targetIndex, soundData.targetDistance);
             }
 
-            // 使用修复后的角度范围检查方法
-            if (!isTargetInSonarRange(sonarID, targetBearing, targetDistance)) {
-                continue; // 不在探测范围内，跳过
+            if (soundData.arrivalSideAngle < -360 || soundData.arrivalSideAngle > 360) {
+                LOG_WARNF("SUSPICIOUS: Target %d angle out of range: %.2f",
+                         targetIndex, soundData.arrivalSideAngle);
             }
 
-            auto& targetsData = m_multiTargetCache.sonarTargetsData[sonarID];
+            // 安全访问频谱数据 - 检查关键位置
+            float spectrumValue;
+            std::vector<int> checkIndices = {0, 1, 100, 1000, 2648, 5000, 5294, 5295};
 
-            // 检查是否已达到最大目标数限制
-            if (targetsData.size() >= MAX_TARGETS_PER_SONAR) {
-                // 如果新目标距离更近，则替换最远的目标
-                auto farthestIt = std::max_element(targetsData.begin(), targetsData.end(),
-                    [](const TargetData& a, const TargetData& b) {
-                        return a.targetDistance < b.targetDistance;
-                    });
+            for (int idx : checkIndices) {
+                if (!safeAccessSpectrumData(soundData, idx, spectrumValue)) {
+                    LOG_ERRORF("FATAL: Failed to access spectrum[%d] for target %d", idx, targetIndex);
+                    return;
+                }
+                LOG_INFOF("  - spectrum[%d]: %.6f", idx, spectrumValue);
+            }
 
-                if (farthestIt != targetsData.end() && targetDistance < farthestIt->targetDistance) {
-                    LOG_INFOF("Replacing farthest target (distance=%.1f) with closer target (distance=%.1f) for sonar %d",
-                              farthestIt->targetDistance, targetDistance, sonarID);
-                    targetsData.erase(farthestIt);
-                } else {
-                    LOG_INFOF("Sonar %d target limit reached, skipping target %d", sonarID, targetId);
-                    continue; // 新目标不够近，跳过
+            // 检查频谱数据是否全为0或异常值
+            bool hasValidSpectrum = false;
+            int nonZeroCount = 0;
+            for (int i = 0; i < 5296; i += 100) { // 采样检查
+                if (safeAccessSpectrumData(soundData, i, spectrumValue)) {
+                    if (spectrumValue != 0.0f) {
+                        nonZeroCount++;
+                        if (spectrumValue > 1e-10 && spectrumValue < 1e10) { // 合理范围
+                            hasValidSpectrum = true;
+                        }
+                    }
                 }
             }
 
-            // 查找是否已存在相同目标ID的数据
-            auto existingIt = std::find_if(targetsData.begin(), targetsData.end(),
-                [targetId](const TargetData& target) {
-                    return target.targetId == targetId;
-                });
+            LOG_INFOF("Target %d spectrum analysis: hasValid=%s, nonZeroCount=%d",
+                     targetIndex, hasValidSpectrum ? "YES" : "NO", nonZeroCount);
 
-            TargetData targetData;
-            targetData.targetId = targetId;
-            targetData.targetDistance = targetDistance;
-            targetData.targetBearing = targetBearing;
-            targetData.lastUpdateTime = currentTime;
-            targetData.isValid = true;
-
-            // 提取频谱数据
-            targetData.propagatedSpectrum.reserve(SPECTRUM_DATA_SIZE);
-            for (int i = 0; i < SPECTRUM_DATA_SIZE; i++) {
-                targetData.propagatedSpectrum.push_back(soundData.spectrumData[i]);
+            if (!hasValidSpectrum) {
+                LOG_WARNF("WARNING: Target %d has suspicious spectrum data", targetIndex);
             }
 
-            if (existingIt != targetsData.end()) {
-                // 更新现有目标数据
-                *existingIt = targetData;
-                LOG_INFOF("Updated existing target %d for sonar %d", targetId, sonarID);
-            } else {
-                // 新目标数据
-                targetsData.push_back(targetData);
-                LOG_INFOF("Added new target %d for sonar %d (total targets: %zu)",
-                          targetId, sonarID, targetsData.size());
+            // 继续处理目标（为每个声纳检查）...
+            int targetId = targetIndex + 1000;
+            float targetBearing = soundData.arrivalSideAngle;
+            float targetDistance = soundData.targetDistance;
+
+            for (int sonarID = 0; sonarID < 4; sonarID++) {
+                // 检查声纳状态
+                auto stateIt = m_sonarStates.find(sonarID);
+                if (stateIt == m_sonarStates.end() ||
+                    !stateIt->second.arrayWorkingState ||
+                    !stateIt->second.passiveWorkingState) {
+                    continue;
+                }
+
+                // 检查范围
+                if (!isTargetInSonarRange(sonarID, targetBearing, targetDistance)) {
+                    continue;
+                }
+
+                auto& targetsData = m_multiTargetCache.sonarTargetsData[sonarID];
+
+                // 限制检查
+                if (targetsData.size() >= MAX_TARGETS_PER_SONAR) {
+                    auto farthestIt = std::max_element(targetsData.begin(), targetsData.end(),
+                        [](const TargetData& a, const TargetData& b) {
+                            return a.targetDistance < b.targetDistance;
+                        });
+
+                    if (farthestIt != targetsData.end() && targetDistance < farthestIt->targetDistance) {
+                        targetsData.erase(farthestIt);
+                    } else {
+                        continue;
+                    }
+                }
+
+                // 创建目标数据
+                TargetData targetData;
+                targetData.targetId = targetId;
+                targetData.targetDistance = targetDistance;
+                targetData.targetBearing = targetBearing;
+                targetData.lastUpdateTime = currentTime;
+                targetData.isValid = true;
+
+                // 安全复制频谱数据
+                targetData.propagatedSpectrum.reserve(5296);
+                bool copySuccess = true;
+
+                for (int i = 0; i < 5296; i++) {
+                    float value;
+                    if (safeAccessSpectrumData(soundData, i, value)) {
+                        targetData.propagatedSpectrum.push_back(value);
+                    } else {
+                        LOG_ERRORF("FATAL: Failed to copy spectrum[%d] for target %d sonar %d",
+                                  i, targetId, sonarID);
+                        copySuccess = false;
+                        break;
+                    }
+                }
+
+                if (!copySuccess) {
+                    LOG_ERRORF("FATAL: Spectrum copy failed for target %d sonar %d", targetId, sonarID);
+                    return;
+                }
+
+                // 更新或添加目标
+                auto existingIt = std::find_if(targetsData.begin(), targetsData.end(),
+                    [targetId](const TargetData& target) {
+                        return target.targetId == targetId;
+                    });
+
+                if (existingIt != targetsData.end()) {
+                    *existingIt = targetData;
+                    LOG_INFOF("✓ Updated target %d for sonar %d", targetId, sonarID);
+                } else {
+                    targetsData.push_back(targetData);
+                    LOG_INFOF("✓ Added new target %d for sonar %d", targetId, sonarID);
+                }
+            }
+
+            targetIndex++;
+        }
+
+    }
+    __except(EXCEPTION_EXECUTE_HANDLER) {
+        LOG_ERRORF("FATAL: Exception during target processing at index %d, exception code: 0x%x",
+                  targetIndex, GetExceptionCode());
+        return;
+    }
+
+    LOG_INFOF("✓ Successfully processed %d targets", targetIndex);
+    LOG_INFOF("=== ENHANCED updateMultiTargetPropagatedSoundCache END ===");
+}
+**/
+
+void DeviceModel::updateMultiTargetPropagatedSoundCache(CSimMessage* simMessage)
+{
+    // 崩溃保护计数检查
+    if (m_crashProtectionCount >= m_maxCrashProtections) {
+        LOG_CRASH("Maximum crash protections reached (%d), function disabled to prevent infinite loops",
+                 m_maxCrashProtections);
+        return;
+    }
+
+    m_crashProtectionCount++;
+
+    try {
+        LOG_SAFE_INFO("=== 防崩溃 updateMultiTargetPropagatedSoundCache START (Protection #%d) ===",
+                     m_crashProtectionCount);
+
+        // ========== 第一级保护：基本参数验证 ==========
+        if (!SAFE_ACCESS_PTR(simMessage, sizeof(CSimMessage), "simMessage")) {
+            emergencyCleanup("simMessage pointer validation failed", __FILENAME__, __FUNCTION__, __LINE__);
+            return;
+        }
+
+        if (!SAFE_ACCESS_PTR(simMessage->data, simMessage->length, "simMessage->data")) {
+            emergencyCleanup("simMessage->data pointer validation failed", __FILENAME__, __FUNCTION__, __LINE__);
+            return;
+        }
+
+        LOG_SAFE_INFO("✓ Basic pointer validation passed");
+        LOG_SAFE_INFO("Message details: time=%lld, sender=%d, length=%d, data=%p",
+                     simMessage->time, simMessage->sender, simMessage->length, simMessage->data);
+
+        // ========== 第二级保护：数据结构转换 ==========
+        const CMsg_PropagatedContinuousSoundListStruct* soundListStruct = nullptr;
+
+        try {
+            // 检查数据长度是否足够
+            if (simMessage->length < sizeof(CMsg_PropagatedContinuousSoundListStruct)) {
+                LOG_SAFE_ERROR("Message length too small: %d < %zu",
+                              simMessage->length, sizeof(CMsg_PropagatedContinuousSoundListStruct));
+                emergencyCleanup("Insufficient message length", __FILENAME__, __FUNCTION__, __LINE__);
+                return;
+            }
+
+            soundListStruct = reinterpret_cast<const CMsg_PropagatedContinuousSoundListStruct*>(simMessage->data);
+
+            if (!SAFE_ACCESS_PTR(soundListStruct, sizeof(CMsg_PropagatedContinuousSoundListStruct), "soundListStruct")) {
+                emergencyCleanup("soundListStruct pointer validation failed", __FILENAME__, __FUNCTION__, __LINE__);
+                return;
+            }
+
+            LOG_SAFE_INFO("✓ Data structure conversion successful");
+
+        } catch (const std::bad_cast& e) {
+            LOG_CRASH("Bad cast exception during reinterpret_cast: %s", e.what());
+            emergencyCleanup("Bad cast during type conversion", __FILENAME__, __FUNCTION__, __LINE__);
+            return;
+        } catch (const std::exception& e) {
+            LOG_CRASH("Exception during data structure conversion: %s", e.what());
+            emergencyCleanup("Exception during type conversion", __FILENAME__, __FUNCTION__, __LINE__);
+            return;
+        } catch (...) {
+            LOG_CRASH("Unknown exception during data structure conversion");
+            emergencyCleanup("Unknown exception during type conversion", __FILENAME__, __FUNCTION__, __LINE__);
+            return;
+        }
+
+        // ========== 第三级保护：STL容器访问 ==========
+        size_t listSize = 0;
+        if (!SAFE_ACCESS_CONTAINER(soundListStruct->propagatedContinuousList, listSize)) {
+            emergencyCleanup("STL container access failed", __FILENAME__, __FUNCTION__, __LINE__);
+            return;
+        }
+
+        LOG_SAFE_INFO("✓ Container access successful, size: %zu", listSize);
+
+        int64 currentTime = simMessage->time;
+
+        // ========== 第四级保护：处理空列表 ==========
+        if (listSize == 0) {
+            LOG_SAFE_INFO("Empty target list received, performing safe cleanup");
+
+            try {
+                for (int sonarID = 0; sonarID < 4; sonarID++) {
+                    safeResetTargetCache(sonarID, __FILENAME__, __FUNCTION__, __LINE__);
+                }
+                LOG_SAFE_INFO("✓ Safe cleanup completed for empty list");
+                return;
+
+            } catch (const std::exception& e) {
+                LOG_CRASH("Exception during empty list cleanup: %s", e.what());
+                emergencyCleanup("Exception during empty list cleanup", __FILENAME__, __FUNCTION__, __LINE__);
+                return;
+            } catch (...) {
+                LOG_CRASH("Unknown exception during empty list cleanup");
+                emergencyCleanup("Unknown exception during empty list cleanup", __FILENAME__, __FUNCTION__, __LINE__);
+                return;
             }
         }
 
-        targetIndex++;
-    }
+        // ========== 第五级保护：清理过期数据 ==========
+        LOG_SAFE_INFO("Performing safe cleanup of expired data");
 
-    // 输出每个声纳的目标统计
-    for (int sonarID = 0; sonarID < 4; sonarID++) {
-        const auto& targetsData = m_multiTargetCache.sonarTargetsData[sonarID];
-        LOG_INFOF("Sonar %d now tracking %zu targets", sonarID, targetsData.size());
+        try {
+            for (int sonarID = 0; sonarID < 4; sonarID++) {
+                try {
+                    auto& targetsData = m_multiTargetCache.sonarTargetsData[sonarID];
+                    size_t beforeSize = targetsData.size();
+
+                    // 安全的过期数据移除
+                    auto removeIt = std::remove_if(targetsData.begin(), targetsData.end(),
+                        [currentTime](const TargetData& target) -> bool {
+                            try {
+                                return (currentTime - target.lastUpdateTime) > DATA_UPDATE_INTERVAL_MS;
+                            } catch (...) {
+                                return true; // 如果比较出错，就移除这个目标
+                            }
+                        });
+
+                    targetsData.erase(removeIt, targetsData.end());
+
+                    size_t afterSize = targetsData.size();
+                    LOG_SAFE_INFO("Sonar %d: cleaned %zu expired targets (before=%zu, after=%zu)",
+                                 sonarID, beforeSize - afterSize, beforeSize, afterSize);
+
+                } catch (const std::exception& e) {
+                    LOG_CRASH("Exception cleaning sonar %d expired data: %s", sonarID, e.what());
+                    safeResetTargetCache(sonarID, __FILENAME__, __FUNCTION__, __LINE__);
+                } catch (...) {
+                    LOG_CRASH("Unknown exception cleaning sonar %d expired data", sonarID);
+                    safeResetTargetCache(sonarID, __FILENAME__, __FUNCTION__, __LINE__);
+                }
+            }
+
+            LOG_SAFE_INFO("✓ Expired data cleanup completed");
+
+        } catch (const std::exception& e) {
+            LOG_CRASH("Exception during expired data cleanup: %s", e.what());
+            emergencyCleanup("Exception during expired data cleanup", __FILENAME__, __FUNCTION__, __LINE__);
+            return;
+        } catch (...) {
+            LOG_CRASH("Unknown exception during expired data cleanup");
+            emergencyCleanup("Unknown exception during expired data cleanup", __FILENAME__, __FUNCTION__, __LINE__);
+            return;
+        }
+
+        // ========== 第六级保护：安全迭代目标数据 ==========
+        LOG_SAFE_INFO("Starting safe iteration of %zu targets", listSize);
+
+        // 使用安全的迭代器处理
+        bool iterationSuccess = safeIterateSTLContainer(
+            soundListStruct->propagatedContinuousList,
+            [this, currentTime](const C_PropagatedContinuousSoundStruct& soundData, int targetIndex) -> bool {
+
+                try {
+                    LOG_SAFE_INFO("=== Processing target %d ===", targetIndex);
+                    LOG_SAFE_INFO("Target %d spectrumData size: %zu elements", targetIndex, sizeof(soundData.spectrumData)/sizeof(float));
+
+                    // ========== 第七级保护：验证目标数据 ==========
+                    // 验证基本数据字段
+                    if (std::isnan(soundData.arrivalSideAngle) || std::isinf(soundData.arrivalSideAngle) ||
+                        soundData.arrivalSideAngle < -360.0f || soundData.arrivalSideAngle > 360.0f) {
+                        LOG_SAFE_WARN("Invalid arrivalSideAngle for target %d: %f", targetIndex, soundData.arrivalSideAngle);
+                        return true; // 跳过这个目标，继续处理下一个
+                    }
+
+                    if (std::isnan(soundData.targetDistance) || std::isinf(soundData.targetDistance) ||
+                        soundData.targetDistance < 0.0f || soundData.targetDistance > 1000000.0f) {
+                        LOG_SAFE_WARN("Invalid targetDistance for target %d: %f", targetIndex, soundData.targetDistance);
+                        return true; // 跳过这个目标，继续处理下一个
+                    }
+
+                    LOG_SAFE_INFO("Target %d data: angle=%.3f°, distance=%.3fm, platType=%d",
+                                 targetIndex, soundData.arrivalSideAngle, soundData.targetDistance, soundData.platType);
+
+                    // ========== 第八级保护：验证频谱数据 ==========
+                    LOG_SAFE_INFO("Validating spectrum data for target %d", targetIndex);
+                    LOG_SAFE_INFO("Target %d spectrumData array size: %zu elements", targetIndex, sizeof(soundData.spectrumData)/sizeof(float));
+
+                    // 检查关键位置的频谱数据
+                    std::vector<int> testIndices = {0, 1, 100, 1000, 2648, 5000, 5294, 5295};
+                    bool spectrumValid = true;
+
+                    for (int idx : testIndices) {
+                        float value;
+                        if (!SAFE_ACCESS_SPECTRUM(soundData.spectrumData, idx, value)) {
+                            LOG_SAFE_ERROR("Failed to access spectrum[%d] for target %d", idx, targetIndex);
+                            spectrumValid = false;
+                            break;
+                        }
+
+                        if (idx < 50) { // 只打印前几个避免日志过多
+                            LOG_SAFE_INFO("spectrum[%d] = %.6f", idx, value);
+                        }
+                    }
+
+                    if (!spectrumValid) {
+                        LOG_SAFE_WARN("Spectrum validation failed for target %d, skipping", targetIndex);
+                        return true; // 跳过这个目标
+                    }
+
+                    // ========== 第九级保护：为每个声纳处理目标 ==========
+                    int targetId = targetIndex + 1000;
+                    float targetBearing = soundData.arrivalSideAngle;
+                    float targetDistance = soundData.targetDistance;
+
+                    for (int sonarID = 0; sonarID < 4; sonarID++) {
+                        try {
+                            LOG_SAFE_INFO("Processing target %d for sonar %d", targetId, sonarID);
+
+                            // 声纳状态检查
+                            auto stateIt = m_sonarStates.find(sonarID);
+                            if (stateIt == m_sonarStates.end()) {
+                                LOG_SAFE_INFO("Sonar %d state not found, skipping", sonarID);
+                                continue;
+                            }
+
+                            if (!stateIt->second.arrayWorkingState || !stateIt->second.passiveWorkingState) {
+                                LOG_SAFE_INFO("Sonar %d not enabled, skipping", sonarID);
+                                continue;
+                            }
+
+                            // 范围检查
+                            if (!isTargetInSonarRange(sonarID, targetBearing, targetDistance)) {
+                                LOG_SAFE_INFO("Target %d not in sonar %d range, skipping", targetId, sonarID);
+                                continue;
+                            }
+
+                            // ========== 第十级保护：安全的目标数据管理 ==========
+                            auto& targetsData = m_multiTargetCache.sonarTargetsData[sonarID];
+
+                            // 检查目标数限制
+                            if (targetsData.size() >= MAX_TARGETS_PER_SONAR) {
+                                LOG_SAFE_INFO("Sonar %d at max capacity (%d), checking replacement",
+                                             sonarID, MAX_TARGETS_PER_SONAR);
+
+                                try {
+                                    auto farthestIt = std::max_element(targetsData.begin(), targetsData.end(),
+                                        [](const TargetData& a, const TargetData& b) -> bool {
+                                            try {
+                                                return a.targetDistance < b.targetDistance;
+                                            } catch (...) {
+                                                return false; // 如果比较出错，保持原顺序
+                                            }
+                                        });
+
+                                    if (farthestIt != targetsData.end() && targetDistance < farthestIt->targetDistance) {
+                                        LOG_SAFE_INFO("Replacing farthest target (%.1fm) with closer target (%.1fm)",
+                                                      farthestIt->targetDistance, targetDistance);
+                                        targetsData.erase(farthestIt);
+                                    } else {
+                                        LOG_SAFE_INFO("New target not closer than existing, skipping");
+                                        continue;
+                                    }
+
+                                } catch (const std::exception& e) {
+                                    LOG_CRASH("Exception during target replacement for sonar %d: %s", sonarID, e.what());
+                                    continue;
+                                } catch (...) {
+                                    LOG_CRASH("Unknown exception during target replacement for sonar %d", sonarID);
+                                    continue;
+                                }
+                            }
+
+                            // ========== 第十一级保护：创建和复制目标数据 ==========
+                            try {
+                                TargetData targetData;
+                                targetData.targetId = targetId;
+                                targetData.targetDistance = targetDistance;
+                                targetData.targetBearing = targetBearing;
+                                targetData.lastUpdateTime = currentTime;
+                                targetData.isValid = true;
+
+                                // 安全复制频谱数据
+                                LOG_SAFE_INFO("Copying spectrum data for target %d sonar %d", targetId, sonarID);
+
+                                targetData.propagatedSpectrum.clear();
+                                targetData.propagatedSpectrum.reserve(5296);
+
+                                bool copySuccess = true;
+                                for (int i = 0; i < 5296; i++) {
+                                    float value;
+                                    if (SAFE_ACCESS_SPECTRUM(soundData.spectrumData, i, value)) {
+                                        targetData.propagatedSpectrum.push_back(value);
+                                    } else {
+                                        LOG_SAFE_ERROR("Failed to copy spectrum[%d], using 0.0", i);
+                                        targetData.propagatedSpectrum.push_back(0.0f);
+                                        copySuccess = false;
+                                    }
+                                }
+
+                                if (!copySuccess) {
+                                    LOG_SAFE_WARN("Spectrum copy had errors for target %d sonar %d, but continuing",
+                                                  targetId, sonarID);
+                                }
+
+                                // 安全更新目标数据
+                                auto existingIt = std::find_if(targetsData.begin(), targetsData.end(),
+                                    [targetId](const TargetData& target) -> bool {
+                                        try {
+                                            return target.targetId == targetId;
+                                        } catch (...) {
+                                            return false;
+                                        }
+                                    });
+
+                                if (existingIt != targetsData.end()) {
+                                    *existingIt = std::move(targetData);
+                                    LOG_SAFE_INFO("✓ Updated existing target %d for sonar %d", targetId, sonarID);
+                                } else {
+                                    targetsData.push_back(std::move(targetData));
+                                    LOG_SAFE_INFO("✓ Added new target %d for sonar %d", targetId, sonarID);
+                                }
+
+                            } catch (const std::bad_alloc& e) {
+                                LOG_CRASH("Memory allocation failed for target %d sonar %d: %s", targetId, sonarID, e.what());
+                                continue;
+                            } catch (const std::exception& e) {
+                                LOG_CRASH("Exception creating target data for target %d sonar %d: %s", targetId, sonarID, e.what());
+                                continue;
+                            } catch (...) {
+                                LOG_CRASH("Unknown exception creating target data for target %d sonar %d", targetId, sonarID);
+                                continue;
+                            }
+
+                        } catch (const std::exception& e) {
+                            LOG_CRASH("Exception in sonar %d processing for target %d: %s", sonarID, targetId, e.what());
+                            continue;
+                        } catch (...) {
+                            LOG_CRASH("Unknown exception in sonar %d processing for target %d", sonarID, targetId);
+                            continue;
+                        }
+                    }
+
+                    LOG_SAFE_INFO("✓ Completed processing target %d", targetIndex);
+                    return true; // 继续处理下一个目标
+
+                } catch (const std::exception& e) {
+                    LOG_CRASH("Exception processing target %d: %s", targetIndex, e.what());
+                    return true; // 继续处理下一个目标，不中断整个过程
+                } catch (...) {
+                    LOG_CRASH("Unknown exception processing target %d", targetIndex);
+                    return true; // 继续处理下一个目标
+                }
+            },
+            __FILENAME__, __FUNCTION__, __LINE__
+        );
+
+        if (!iterationSuccess) {
+            LOG_SAFE_ERROR("Target iteration failed, but function completed safely");
+        } else {
+            LOG_SAFE_INFO("✓ All targets processed successfully");
+        }
+
+        // 重置崩溃保护计数（成功完成）
+        if (m_crashProtectionCount > 0) {
+            m_crashProtectionCount--;
+        }
+
+        LOG_SAFE_INFO("=== 防崩溃 updateMultiTargetPropagatedSoundCache END SUCCESS ===");
+
+    } catch (const std::exception& e) {
+        LOG_CRASH("Top-level exception in updateMultiTargetPropagatedSoundCache: %s", e.what());
+        emergencyCleanup("Top-level exception", __FILENAME__, __FUNCTION__, __LINE__);
+    } catch (...) {
+        LOG_CRASH("Top-level unknown exception in updateMultiTargetPropagatedSoundCache");
+        emergencyCleanup("Top-level unknown exception", __FILENAME__, __FUNCTION__, __LINE__);
     }
-    LOG_EMPTY("");
 }
+
 bool DeviceModel::isTargetInSonarRange(int sonarID, float targetBearing, float targetDistance)
 {
     // 检查距离范围
@@ -1763,4 +2661,455 @@ void DeviceModel::sendPassiveSonarResultsInStep()
     }
 
     sendAllPassiveSonarResults(currentThresholds, curTime);
+}
+
+
+
+
+
+bool DeviceModel::safeAccessSpectrumData(const C_PropagatedContinuousSoundStruct& soundData,
+                                         int index, float& value) const
+{
+    if (index < 0 || index >= 5296) {
+        LOG_ERRORF("CRITICAL: Spectrum index out of bounds: %d (valid range: 0-5295)", index);
+        return false;
+    }
+
+    try {
+        value = soundData.spectrumData[index];
+        return true;
+    } catch (const std::exception& e) {
+        LOG_ERRORF("CRASH: Exception accessing spectrum[%d]: %s", index, e.what());
+        return false;
+    } catch (...) {
+        LOG_ERRORF("CRASH: Unknown exception accessing spectrum[%d]", index);
+        return false;
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool DeviceModel::safeAccessPointer(const void* ptr, size_t size, const char* ptrName,
+                                   const char* fileName, const char* funcName, int line) const
+{
+    try {
+        if (!ptr) {
+            LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] NULL pointer access attempted for %s",
+                      fileName, funcName, line, ptrName);
+            return false;
+        }
+
+        // 基本的指针有效性检查 - 跨平台版本
+        // 尝试读取第一个字节来验证内存可访问性
+        try {
+            volatile char testByte = *static_cast<const volatile char*>(ptr);
+            (void)testByte; // 避免未使用变量警告
+        } catch (...) {
+            LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Memory access failed for %s (ptr=%p, size=%zu)",
+                      fileName, funcName, line, ptrName, ptr, size);
+            return false;
+        }
+
+        return true;
+
+    } catch (const std::exception& e) {
+        LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Exception accessing %s: %s",
+                  fileName, funcName, line, ptrName, e.what());
+        return false;
+    } catch (...) {
+        LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Unknown exception accessing %s",
+                  fileName, funcName, line, ptrName);
+        return false;
+    }
+}
+
+bool DeviceModel::safeAccessSpectrumArray(const float* spectrumData, int index, float& outValue,
+                                          const char* fileName, const char* funcName, int line) const
+{
+    try {
+        // 边界检查
+        if (index < 0 || index >= 5296) {
+            LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Spectrum array index out of bounds: %d (valid: 0-5295)",
+                      fileName, funcName, line, index);
+            outValue = 0.0f;
+            return false;
+        }
+
+        // 指针检查
+        if (!spectrumData) {
+            LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Spectrum array pointer is NULL",
+                      fileName, funcName, line);
+            outValue = 0.0f;
+            return false;
+        }
+
+        // 基本内存访问检查
+        if (!SAFE_ACCESS_PTR(spectrumData + index, sizeof(float), "spectrumData[index]")) {
+            LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Cannot access spectrum[%d] memory",
+                      fileName, funcName, line, index);
+            outValue = 0.0f;
+            return false;
+        }
+
+        // 安全读取值
+        outValue = spectrumData[index];
+
+        // 检查值的合理性
+        if (std::isnan(outValue) || std::isinf(outValue)) {
+            LOG_SAFE_WARN("Spectrum[%d] contains invalid float value: %f", index, outValue);
+            outValue = 0.0f;
+        }
+
+        return true;
+
+    } catch (const std::exception& e) {
+        LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Exception reading spectrum[%d]: %s",
+                  fileName, funcName, line, index, e.what());
+        outValue = 0.0f;
+        return false;
+    } catch (...) {
+        LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Unknown exception reading spectrum[%d]",
+                  fileName, funcName, line, index);
+        outValue = 0.0f;
+        return false;
+    }
+}
+
+bool DeviceModel::safeAccessSTLContainer(const std::list<C_PropagatedContinuousSoundStruct>& container,
+                                         size_t& outSize, const char* fileName, const char* funcName, int line) const
+{
+    try {
+        outSize = container.size();
+
+        // 检查容器大小的合理性
+        if (outSize > 10000) {  // 合理的上限
+            LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] STL container size suspiciously large: %zu",
+                      fileName, funcName, line, outSize);
+            outSize = 0;
+            return false;
+        }
+
+        return true;
+
+    } catch (const std::exception& e) {
+        LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Exception accessing STL container size: %s",
+                  fileName, funcName, line, e.what());
+        outSize = 0;
+        return false;
+    } catch (...) {
+        LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Unknown exception accessing STL container size",
+                  fileName, funcName, line);
+        outSize = 0;
+        return false;
+    }
+}
+
+bool DeviceModel::safeIterateSTLContainer(const std::list<C_PropagatedContinuousSoundStruct>& container,
+                                          std::function<bool(const C_PropagatedContinuousSoundStruct&, int)> processor,
+                                          const char* fileName, const char* funcName, int line) const
+{
+    try {
+        size_t containerSize;
+        if (!SAFE_ACCESS_CONTAINER(container, containerSize)) {
+            return false;
+        }
+
+        if (containerSize == 0) {
+            LOG_SAFE_INFO("Container is empty, nothing to iterate");
+            return true;
+        }
+
+        int index = 0;
+        for (const auto& item : container) {
+            try {
+                if (!processor(item, index)) {
+                    LOG_SAFE_WARN("Processor returned false for item %d, stopping iteration", index);
+                    break;
+                }
+                index++;
+
+                // 防止无限循环
+                if (index > static_cast<int>(containerSize) + 10) {
+                    LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Iterator index exceeded container size, possible corruption",
+                              fileName, funcName, line);
+                    break;
+                }
+
+            } catch (const std::exception& e) {
+                LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Exception processing container item %d: %s",
+                          fileName, funcName, line, index, e.what());
+                continue; // 继续处理下一个项目
+            } catch (...) {
+                LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Unknown exception processing container item %d",
+                          fileName, funcName, line, index);
+                continue;
+            }
+        }
+
+        return true;
+
+    } catch (const std::exception& e) {
+        LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Exception during container iteration: %s",
+                  fileName, funcName, line, e.what());
+        return false;
+    } catch (...) {
+        LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Unknown exception during container iteration",
+                  fileName, funcName, line);
+        return false;
+    }
+}
+
+void DeviceModel::emergencyCleanup(const char* reason, const char* fileName, const char* funcName, int line)
+{
+    try {
+        LOG_ERRORF("[EMERGENCY_CLEANUP][%s::%s:%d] Performing emergency cleanup due to: %s",
+                  fileName, funcName, line, reason);
+
+        // 清空所有缓存数据
+        for (int sonarID = 0; sonarID < 4; sonarID++) {
+            safeResetTargetCache(sonarID, fileName, funcName, line);
+        }
+
+        // 重置统计信息
+        m_debugStats.failedProcessings++;
+        m_debugStats.lastErrorMsg = std::string(reason) + " (Emergency cleanup performed)";
+
+        LOG_SAFE_INFO("Emergency cleanup completed successfully");
+
+    } catch (...) {
+        // 即使紧急清理也失败了，至少记录日志
+        LOG_ERRORF("[EMERGENCY_CLEANUP][%s::%s:%d] Emergency cleanup itself failed!",
+                  fileName, funcName, line);
+    }
+}
+
+void DeviceModel::safeResetTargetCache(int sonarID, const char* fileName, const char* funcName, int line)
+{
+    try {
+        if (sonarID < 0 || sonarID >= 4) {
+            LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Invalid sonarID for reset: %d",
+                      fileName, funcName, line, sonarID);
+            return;
+        }
+
+        m_multiTargetCache.sonarTargetsData[sonarID].clear();
+        m_multiTargetCache.multiTargetEquationResults[sonarID].clear();
+
+        LOG_SAFE_INFO("Successfully reset cache for sonar %d", sonarID);
+
+    } catch (const std::exception& e) {
+        LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Exception resetting sonar %d cache: %s",
+                  fileName, funcName, line, sonarID, e.what());
+    } catch (...) {
+        LOG_ERRORF("[CRASH_PROTECTED][%s::%s:%d] Unknown exception resetting sonar %d cache",
+                  fileName, funcName, line, sonarID);
+    }
+}
+
+// 安全执行包装器实现
+template<typename Func>
+bool DeviceModel::safeExecute(Func&& func, const char* funcName, const char* fileName, int line)
+{
+    if (!m_globalProtection.isProtectionEnabled) {
+        LOG_SAFE_WARN("Global protection disabled, executing function %s without protection", funcName);
+        try {
+            func();
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    try {
+        LOG_SAFE_INFO("Executing protected function: %s", funcName);
+
+        auto startTime = std::chrono::steady_clock::now();
+
+        // 执行函数
+        bool result = func();
+
+        auto endTime = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+
+        if (duration.count() > 1000) { // 超过1秒记录警告
+            LOG_SAFE_WARN("Function %s took %lld ms to execute", funcName, duration.count());
+        }
+
+        LOG_SAFE_INFO("Function %s completed successfully in %lld ms", funcName, duration.count());
+        return result;
+
+    } catch (const std::bad_alloc& e) {
+        LOG_ERRORF("[MEMORY_ERROR][%s::%s:%d] Memory allocation failed in %s: %s",
+                  fileName, funcName, line, funcName, e.what());
+        recordException("Memory allocation failed: " + std::string(e.what()), fileName, funcName, line);
+        emergencyCleanup("Memory allocation failed", fileName, funcName, line);
+        return false;
+
+    } catch (const std::runtime_error& e) {
+        LOG_ERRORF("[RUNTIME_ERROR][%s::%s:%d] Runtime error in %s: %s",
+                  fileName, funcName, line, funcName, e.what());
+        recordException("Runtime error: " + std::string(e.what()), fileName, funcName, line);
+        return false;
+
+    } catch (const std::logic_error& e) {
+        LOG_ERRORF("[LOGIC_ERROR][%s::%s:%d] Logic error in %s: %s",
+                  fileName, funcName, line, funcName, e.what());
+        recordException("Logic error: " + std::string(e.what()), fileName, funcName, line);
+        return false;
+
+    } catch (const std::exception& e) {
+        LOG_ERRORF("[EXCEPTION][%s::%s:%d] Exception in %s: %s",
+                  fileName, funcName, line, funcName, e.what());
+        recordException("Standard exception: " + std::string(e.what()), fileName, funcName, line);
+        return false;
+
+    } catch (...) {
+        LOG_ERRORF("[UNKNOWN_EXCEPTION][%s::%s:%d] Unknown exception in %s",
+                  fileName, funcName, line, funcName);
+        recordException("Unknown exception", fileName, funcName, line);
+        return false;
+    }
+}
+
+// 保护状态检查函数实现
+bool DeviceModel::checkExecutionTimeout(const char* funcName, const char* fileName, int line)
+{
+    try {
+        auto currentTime = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            currentTime - m_globalProtection.functionStartTime);
+
+        if (elapsed.count() > m_globalProtection.maxExecutionTimeMs) {
+            LOG_ERRORF("[TIMEOUT][%s::%s:%d] Function %s exceeded maximum execution time: %lld ms",
+                      fileName, funcName, line, funcName, elapsed.count());
+            emergencyCleanup("Execution timeout", fileName, funcName, line);
+            return false;
+        }
+
+        return true;
+
+    } catch (...) {
+        LOG_ERRORF("[TIMEOUT_CHECK_FAILED][%s::%s:%d] Failed to check timeout for %s",
+                  fileName, funcName, line, funcName);
+        return true; // 如果检查失败，允许继续执行
+    }
+}
+
+void DeviceModel::startExecutionTimer()
+{
+    try {
+        m_globalProtection.functionStartTime = std::chrono::steady_clock::now();
+    } catch (...) {
+        // 即使计时器启动失败也不影响主流程
+        LOG_SAFE_WARN("Failed to start execution timer");
+    }
+}
+
+bool DeviceModel::checkMemoryUsage(const char* funcName, const char* fileName, int line)
+{
+    try {
+        // 简单的内存使用估算
+        size_t estimatedUsage = 0;
+
+        // 估算目标缓存使用的内存
+        for (const auto& sonarPair : m_multiTargetCache.sonarTargetsData) {
+            for (const auto& target : sonarPair.second) {
+                estimatedUsage += sizeof(TargetData) + target.propagatedSpectrum.size() * sizeof(float);
+            }
+        }
+
+        // 估算其他缓存
+        for (const auto& spectrumPair : m_multiTargetCache.platformSelfSoundSpectrumMap) {
+            estimatedUsage += spectrumPair.second.size() * sizeof(float);
+        }
+
+        for (const auto& spectrumPair : m_multiTargetCache.environmentNoiseSpectrumMap) {
+            estimatedUsage += spectrumPair.second.size() * sizeof(float);
+        }
+
+        m_globalProtection.currentMemoryEstimate = estimatedUsage;
+
+        if (estimatedUsage > m_globalProtection.maxMemoryUsage) {
+            m_globalProtection.maxMemoryUsage = estimatedUsage;
+        }
+
+        // 检查是否超过合理限制（比如500MB）
+        const size_t MAX_MEMORY_LIMIT = 500 * 1024 * 1024; // 500MB
+        if (estimatedUsage > MAX_MEMORY_LIMIT) {
+            LOG_ERRORF("[MEMORY_LIMIT][%s::%s:%d] Memory usage too high in %s: %zu bytes",
+                      fileName, funcName, line, funcName, estimatedUsage);
+
+            // 尝试清理一些数据
+            emergencyCleanup("Memory limit exceeded", fileName, funcName, line);
+            return false;
+        }
+
+        return true;
+
+    } catch (...) {
+        LOG_SAFE_WARN("Failed to check memory usage, allowing continuation");
+        return true; // 如果检查失败，允许继续执行
+    }
+}
+
+void DeviceModel::updateMemoryEstimate()
+{
+    try {
+        checkMemoryUsage("updateMemoryEstimate", __FILENAME__, __LINE__);
+    } catch (...) {
+        // 静默处理，不影响主流程
+    }
+}
+
+bool DeviceModel::checkExceptionLimit(const char* funcName, const char* fileName, int line)
+{
+    try {
+        if (m_globalProtection.totalExceptions >= m_globalProtection.maxExceptionsAllowed) {
+            LOG_ERRORF("[EXCEPTION_LIMIT][%s::%s:%d] Maximum exceptions reached (%d) in %s, disabling protection",
+                      fileName, funcName, line, m_globalProtection.maxExceptionsAllowed, funcName);
+            m_globalProtection.isProtectionEnabled = false;
+            return false;
+        }
+
+        return true;
+
+    } catch (...) {
+        return true; // 如果检查失败，允许继续执行
+    }
+}
+
+void DeviceModel::recordException(const std::string& exceptionInfo, const char* fileName, const char* funcName, int line)
+{
+    try {
+        m_globalProtection.totalExceptions++;
+        m_globalProtection.lastExceptionTime = std::chrono::steady_clock::now();
+        m_globalProtection.lastExceptionLocation = std::string(fileName) + "::" + funcName + ":" + std::to_string(line);
+
+        LOG_ERRORF("[EXCEPTION_RECORDED][%s::%s:%d] Exception #%d: %s",
+                  fileName, funcName, line, m_globalProtection.totalExceptions, exceptionInfo.c_str());
+
+        // 如果异常过于频繁，考虑临时禁用某些功能
+        auto now = std::chrono::steady_clock::now();
+        static auto lastExceptionTime = now;
+        auto timeSinceLastException = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastExceptionTime);
+
+        if (timeSinceLastException.count() < 100) { // 100毫秒内连续异常
+            LOG_SAFE_WARN("Frequent exceptions detected, consider function throttling");
+        }
+
+        lastExceptionTime = now;
+
+    } catch (...) {
+        // 即使记录异常失败也不要影响主流程
+    }
 }
