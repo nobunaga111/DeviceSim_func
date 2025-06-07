@@ -29,6 +29,12 @@ public:
     // 设置日志级别
     void setLogLevel(LogLevel level);
 
+    // 设置实体ID（新增）
+    void setEntityId(int64_t entityId);
+
+    // 获取实体ID（新增）
+    int64_t getEntityId() const;
+
     // 核心日志方法
     void log(LogLevel level, const char* function, int line, const std::string& message);
 
@@ -57,8 +63,6 @@ public:
 
     // 检查是否启用了某个级别的日志
     bool isEnabled(LogLevel level) const;
-
-
 
     // 启用/禁用文件输出
     void enableFileOutput(bool enable);
@@ -94,9 +98,6 @@ private:
     template<typename... Args>
     std::string formatString(const char* format, Args... args);
 
-
-    bool m_fileOutputEnabled = true;  // 文件输出开关
-
 private:
     LogLevel m_logLevel = LogLevel::DEBUG;
     bool m_enableConsole = true;
@@ -104,6 +105,8 @@ private:
     std::ofstream m_logFile;
     std::string m_logFilePath;
     bool m_initialized = false;
+    bool m_fileOutputEnabled = true;  // 文件输出开关
+    int64_t m_entityId = -1;          // 实体ID，默认为-1表示未设置
 };
 
 // 模板方法实现

@@ -145,12 +145,17 @@ std::string Logger::getTimestamp() const {
 }
 
 void Logger::writeLog(LogLevel level, const char* function, int line, const std::string& message) {
-
-
-
     std::stringstream logStream;
-    logStream << "[" << getTimestamp() << "] "
-              << "[" << getLevelString(level) << "] "
+    logStream << "[" << getTimestamp() << "] ";
+
+    // 添加实体ID信息
+    if (m_entityId != -1) {
+        logStream << "[Entity:" << m_entityId << "] ";
+    } else {
+        logStream << "[Entity:UNSET] ";
+    }
+
+    logStream << "[" << getLevelString(level) << "] "
               << "[" << function << ":" << line << "] "
               << message;
 
@@ -161,26 +166,21 @@ void Logger::writeLog(LogLevel level, const char* function, int line, const std:
         std::cout << logLine << std::endl;
     }
 
-    // 输出到文件 - 明显的状态检查
-    std::cout << "DEBUG writeLog: this=" << this
-                  << ", m_fileOutputEnabled=" << this->m_fileOutputEnabled
-                  << ", m_enableFile=" << this->m_enableFile
-                  << ", file_open=" << (this->m_logFile.is_open() ? 1 : 0) << std::endl;
-
+    // 输出到文件
     if (m_fileOutputEnabled && m_enableFile && m_logFile.is_open()) {
         m_logFile << logLine << std::endl;
         m_logFile.flush();
-//        std::cout << "DEBUG: Log written to file" << std::endl;
-    } else {
-//        std::cout << "DEBUG: Log NOT written to file" << std::endl;
     }
 }
 
 void Logger::writeLogEmpty(LogLevel level, const char* function, int line, const std::string& message) {
-
-
-
     std::stringstream logStream;
+
+    // 对于empty类型的日志，也可以选择添加实体ID前缀
+    if (m_entityId != -1) {
+        logStream << "[Entity:" << m_entityId << "] ";
+    }
+
     logStream << message;
 
     std::string logLine = logStream.str();
@@ -190,18 +190,10 @@ void Logger::writeLogEmpty(LogLevel level, const char* function, int line, const
         std::cout << logLine << std::endl;
     }
 
-    // 输出到文件 - 明显的状态检查
-    std::cout << "DEBUG writeLog: this=" << this
-                  << ", m_fileOutputEnabled=" << this->m_fileOutputEnabled
-                  << ", m_enableFile=" << this->m_enableFile
-                  << ", file_open=" << (this->m_logFile.is_open() ? 1 : 0) << std::endl;
-
+    // 输出到文件
     if (m_fileOutputEnabled && m_enableFile && m_logFile.is_open()) {
         m_logFile << logLine << std::endl;
         m_logFile.flush();
-        std::cout << "DEBUG: Log written to file" << std::endl;
-    } else {
-        std::cout << "DEBUG: Log NOT written to file" << std::endl;
     }
 }
 
@@ -248,4 +240,21 @@ std::string Logger::getCurrentLogFilePath() const {
 
 bool Logger::isInitialized() const {
     return m_initialized;
+}
+
+// 设置实体ID的方法
+void Logger::setEntityId(int64_t entityId) {
+    m_entityId = entityId;
+    if (m_enableConsole) {
+        std::cout << "Logger: Entity ID set to " << entityId << std::endl;
+    }
+    if (m_enableFile && m_logFile.is_open()) {
+        m_logFile << "========== Entity ID set to " << entityId << " at " << getTimestamp() << " ==========\n";
+        m_logFile.flush();
+    }
+}
+
+// 获取实体ID的方法
+int64_t Logger::getEntityId() const {
+    return m_entityId;
 }

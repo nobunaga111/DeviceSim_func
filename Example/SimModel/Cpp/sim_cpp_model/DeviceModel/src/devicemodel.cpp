@@ -119,6 +119,18 @@ bool DeviceModel::init(CSimModelAgentBase* simModelAgent, CSimComponentAttribute
     }
     m_agent = simModelAgent;
 
+
+
+    // 获取实体ID并设置到Logger中
+    if (m_agent->getPlatformEntity()) {
+        int64_t entityId = m_agent->getPlatformEntity()->id;
+        Logger::getInstance().setEntityId(entityId);
+        LOG_INFOF("DeviceModel initialized for entity ID: %lld", entityId);
+    } else {
+        LOG_WARN("Warning: Could not get platform entity during initialization");
+    }
+
+
     initDetectionTrack();
 
     m_initialized = true;
