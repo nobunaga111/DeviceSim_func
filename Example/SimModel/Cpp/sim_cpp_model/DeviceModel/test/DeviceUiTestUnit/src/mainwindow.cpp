@@ -217,7 +217,7 @@ void MainWindow::createSonarStatusPanel()
     }
 
     QPushButton* debugButton = new QPushButton("调试：显示所有目标");
-    debugButton->setStyleSheet("background-color: lightcoral;");
+    debugButton->setStyleSheet("background-color: white;");
     connect(debugButton, &QPushButton::clicked, [this]() {
        if (m_seaChartWidget) {
            // 输出所有平台信息
@@ -268,7 +268,7 @@ void MainWindow::createSonarStatusPanel()
 
         // 声纳名称和启用开关
         control.nameLabel = new QLabel(SONAR_NAMES[sonarID]);
-        control.nameLabel->setStyleSheet("font-weight: bold; font-size: 14px; color: " + SONAR_COLORS[sonarID].name() + ";");
+        control.nameLabel->setStyleSheet("font-weight: bold; font-size: 14px; color: black;");
         frameLayout->addWidget(control.nameLabel, 0, 0, 1, 2);
 
         control.enableCheckBox = new QCheckBox("启用");
@@ -279,7 +279,7 @@ void MainWindow::createSonarStatusPanel()
 
         // 状态指示
         control.statusLabel = new QLabel("正常");
-        control.statusLabel->setStyleSheet("color: green; font-weight: bold;");
+        control.statusLabel->setStyleSheet("color: black; font-weight: bold;");
         frameLayout->addWidget(new QLabel("状态:"), 1, 0);
         frameLayout->addWidget(control.statusLabel, 1, 1, 1, 2);
 
@@ -304,7 +304,7 @@ void MainWindow::createSonarStatusPanel()
 
         // 方程结果标签
         control.equationResultLabel = new QLabel("等待数据...");
-        control.equationResultLabel->setStyleSheet("color: blue; font-size: 10px;");
+        control.equationResultLabel->setStyleSheet("color: black; font-size: 10px;");
         control.equationResultLabel->setWordWrap(true);
         frameLayout->addWidget(new QLabel("方程结果:"), 4, 0);
         frameLayout->addWidget(control.equationResultLabel, 4, 1, 1, 2);
@@ -332,25 +332,25 @@ void MainWindow::createSonarStatusPanel()
     // 平台位置
     systemLayout->addWidget(new QLabel("平台位置:"), 0, 0);
     m_platformPositionLabel = new QLabel("126.56°E, 56.65°N");
-    m_platformPositionLabel->setStyleSheet("color: blue; font-family: monospace; font-size: 12px;");
+    m_platformPositionLabel->setStyleSheet("color: black; font-family: monospace; font-size: 12px;");
     systemLayout->addWidget(m_platformPositionLabel, 0, 1);
 
     // 目标数量
     systemLayout->addWidget(new QLabel("目标数量:"), 1, 0);
     m_targetCountLabel = new QLabel("0");
-    m_targetCountLabel->setStyleSheet("color: red; font-weight: bold; font-size: 14px;");
+    m_targetCountLabel->setStyleSheet("color: black; font-weight: bold; font-size: 14px;");
     systemLayout->addWidget(m_targetCountLabel, 1, 1);
 
     // 数据状态
     systemLayout->addWidget(new QLabel("数据状态:"), 2, 0);
     m_dataStatusLabel = new QLabel("初始化中...");
-    m_dataStatusLabel->setStyleSheet("color: orange; font-size: 12px;");
+    m_dataStatusLabel->setStyleSheet("color: black; font-size: 12px;");
     systemLayout->addWidget(m_dataStatusLabel, 2, 1);
 
     // 仿真时间
     systemLayout->addWidget(new QLabel("仿真时间:"), 3, 0);
     m_simulationTimeLabel = new QLabel("00:00:00");
-    m_simulationTimeLabel->setStyleSheet("color: green; font-family: monospace; font-size: 14px;");
+    m_simulationTimeLabel->setStyleSheet("color: black; font-family: monospace; font-size: 14px;");
     systemLayout->addWidget(m_simulationTimeLabel, 3, 1);
 
     horizontalStatsLayout->addWidget(m_systemStatusGroup);
@@ -365,11 +365,11 @@ void MainWindow::createSonarStatusPanel()
     // 控制按钮
     QHBoxLayout* resultsButtonLayout = new QHBoxLayout();
     m_refreshResultsButton = new QPushButton("刷新结果");
-    m_refreshResultsButton->setStyleSheet("background-color: lightblue;");
+    m_refreshResultsButton->setStyleSheet("background-color: white;");
     connect(m_refreshResultsButton, &QPushButton::clicked, this, &MainWindow::updateSonarEquationResults);
 
     m_exportResultsButton = new QPushButton("导出结果");
-    m_exportResultsButton->setStyleSheet("background-color: lightgreen;");
+    m_exportResultsButton->setStyleSheet("background-color: white;");
     // TODO: 连接导出功能
 
     resultsButtonLayout->addWidget(m_refreshResultsButton);
@@ -415,7 +415,7 @@ void MainWindow::createLogPanel()
 
     // 日志标题
     QLabel* logTitle = new QLabel("系统日志");
-    logTitle->setStyleSheet("font-weight: bold; font-size: 18px; color: darkblue;");
+    logTitle->setStyleSheet("font-weight: bold; font-size: 18px; color: black;");
     logLayout->addWidget(logTitle);
 
     // 创建日志文本编辑框
@@ -505,7 +505,7 @@ void MainWindow::onSonarSwitchToggled(int sonarID, bool enabled)
     // 更新状态显示
     auto& control = m_sonarControls[sonarID];
     control.statusLabel->setText(enabled ? "正常" : "关闭");
-    control.statusLabel->setStyleSheet(enabled ? "color: green; font-weight: bold;" : "color: red; font-weight: bold;");
+    control.statusLabel->setStyleSheet(enabled ? "color: white; font-weight: bold;" : "color: red; font-weight: bold;");
 
     if (!enabled) {
         control.targetCountDisplay->display(0);
@@ -527,7 +527,7 @@ void MainWindow::onTargetPlatformsUpdated(const QVector<ChartPlatform>& targetPl
     m_targetCountLabel->setText(QString::number(targetPlatforms.size()));
     m_targetCountLabel->setStyleSheet(
         targetPlatforms.isEmpty() ? "color: gray;" :
-        targetPlatforms.size() > 8 ? "color: red; font-weight: bold;" : "color: green; font-weight: bold;"
+        targetPlatforms.size() > 8 ? "color: red; font-weight: bold;" : "color: white; font-weight: bold;"
     );
 
     // 无论目标列表是否为空，都发送数据
@@ -542,10 +542,10 @@ void MainWindow::onTargetPlatformsUpdated(const QVector<ChartPlatform>& targetPl
     // 更新数据状态
     if (m_platformSelfSoundSent && m_environmentNoiseSent && !targetPlatforms.isEmpty()) {
         m_dataStatusLabel->setText("数据完整");
-        m_dataStatusLabel->setStyleSheet("color: green; font-weight: bold;");
+        m_dataStatusLabel->setStyleSheet("color: black; font-weight: bold;");
     } else {
         m_dataStatusLabel->setText("数据不完整");
-        m_dataStatusLabel->setStyleSheet("color: orange;");
+        m_dataStatusLabel->setStyleSheet("color: black;");
     }
 }
 
@@ -736,7 +736,10 @@ void MainWindow::updateSonarStatusDisplay()
 
 void MainWindow::sendSonarControlOrder(int sonarID, bool enabled)
 {
-    if (!m_component) return;
+    if (!m_component)
+    {
+        return;
+    }
 
     try {
         // 创建声纳控制命令
@@ -1221,7 +1224,7 @@ void MainWindow::createThresholdConfigPanel()
 
         // 声纳名称标签
         thresholdWidget.nameLabel = new QLabel(SONAR_NAMES[sonarID]);
-        thresholdWidget.nameLabel->setStyleSheet("color: " + SONAR_COLORS[sonarID].name() + "; font-weight: bold; font-size: 14px;");
+        thresholdWidget.nameLabel->setStyleSheet("color: black; font-weight: bold; font-size: 14px;");
         frameLayout->addWidget(thresholdWidget.nameLabel);
 
         // 阈值输入框
@@ -1247,7 +1250,7 @@ void MainWindow::createThresholdConfigPanel()
 
         // 状态标签
         thresholdWidget.statusLabel = new QLabel(QString("当前: %1").arg(defaultValues[sonarID], 0, 'f', 2));
-        thresholdWidget.statusLabel->setStyleSheet("color: blue; font-size: 10px;");
+        thresholdWidget.statusLabel->setStyleSheet("color: black; font-size: 10px;");
         frameLayout->addWidget(thresholdWidget.statusLabel);
 
         sonarThresholdLayout->addWidget(thresholdFrame, row, col);
@@ -1262,21 +1265,21 @@ void MainWindow::createThresholdConfigPanel()
     thresholdButtonLayout->setAlignment(Qt::AlignTop | Qt::AlignRight); // 顶部右对齐
 
     m_saveThresholdConfigButton = new QPushButton("保存配置");
-    m_saveThresholdConfigButton->setStyleSheet("background-color: lightgreen;");
+    m_saveThresholdConfigButton->setStyleSheet("background-color: white;");
     m_saveThresholdConfigButton->setFixedSize(100, 30);
     connect(m_saveThresholdConfigButton, &QPushButton::clicked,
             this, &MainWindow::onSaveThresholdConfig);
     thresholdButtonLayout->addWidget(m_saveThresholdConfigButton);
 
     m_loadThresholdConfigButton = new QPushButton("加载配置");
-    m_loadThresholdConfigButton->setStyleSheet("background-color: lightblue;");
+    m_loadThresholdConfigButton->setStyleSheet("background-color: white;");
     m_loadThresholdConfigButton->setFixedSize(100, 30);
     connect(m_loadThresholdConfigButton, &QPushButton::clicked,
             this, &MainWindow::onLoadThresholdConfig);
     thresholdButtonLayout->addWidget(m_loadThresholdConfigButton);
 
     m_resetThresholdButton = new QPushButton("重置默认");
-    m_resetThresholdButton->setStyleSheet("background-color: orange;");
+    m_resetThresholdButton->setStyleSheet("background-color: white;");
     m_resetThresholdButton->setFixedSize(100, 30);
     connect(m_resetThresholdButton, &QPushButton::clicked,
             this, &MainWindow::onResetThreshold);
@@ -1296,7 +1299,7 @@ void MainWindow::createThresholdConfigPanel()
 void MainWindow::createSonarRangeConfigPanel()
 {
     // === 声纳范围配置组 ===
-    m_sonarRangeConfigGroup = new QGroupBox("声纳最大探测距离配置");
+    m_sonarRangeConfigGroup = new QGroupBox("声纳最大探测距离范围颜色区域覆盖（只影响界面）");
     m_sonarRangeConfigGroup->setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; }");
 
     QVBoxLayout* rangeLayout = new QVBoxLayout(m_sonarRangeConfigGroup);
@@ -1324,7 +1327,7 @@ void MainWindow::createSonarRangeConfigPanel()
 
         // 声纳名称标签
         rangeWidget.nameLabel = new QLabel(SONAR_NAMES[sonarID]);
-        rangeWidget.nameLabel->setStyleSheet("color: " + SONAR_COLORS[sonarID].name() + "; font-weight: bold; font-size: 14px;");
+        rangeWidget.nameLabel->setStyleSheet("color: black; font-weight: bold; font-size: 14px;");
         frameLayout->addWidget(rangeWidget.nameLabel);
 
         // 最大距离输入框
@@ -1347,7 +1350,7 @@ void MainWindow::createSonarRangeConfigPanel()
 
         // 状态标签
         rangeWidget.statusLabel = new QLabel(QString("当前: %1m").arg(m_sonarRangeConfigs[sonarID].maxRange, 0, 'f', 0));
-        rangeWidget.statusLabel->setStyleSheet("color: blue; font-size: 12px;");
+        rangeWidget.statusLabel->setStyleSheet("color: black; font-size: 12px;");
         frameLayout->addWidget(rangeWidget.statusLabel);
 
         sonarRangeLayout->addWidget(rangeFrame, row, col);
@@ -1362,14 +1365,14 @@ void MainWindow::createSonarRangeConfigPanel()
     rangeButtonLayout->setAlignment(Qt::AlignTop | Qt::AlignRight); // 顶部右对齐
 
     m_saveRangeConfigButton = new QPushButton("保存范围配置");
-    m_saveRangeConfigButton->setStyleSheet("background-color: lightgreen;");
+    m_saveRangeConfigButton->setStyleSheet("background-color: white;");
     m_saveRangeConfigButton->setFixedSize(120, 30);
     connect(m_saveRangeConfigButton, &QPushButton::clicked,
             this, &MainWindow::onSaveRangeConfig);
     rangeButtonLayout->addWidget(m_saveRangeConfigButton);
 
     m_resetRangeConfigButton = new QPushButton("重置默认范围");
-    m_resetRangeConfigButton->setStyleSheet("background-color: orange;");
+    m_resetRangeConfigButton->setStyleSheet("background-color: white;");
     m_resetRangeConfigButton->setFixedSize(120, 30);
     connect(m_resetRangeConfigButton, &QPushButton::clicked,
             this, &MainWindow::onResetRangeConfig);
@@ -1511,7 +1514,7 @@ void MainWindow::updateThresholdDisplay()
 
         // 调整字体大小
         thresholdWidget.statusLabel->setText(QString("当前: %1").arg(currentThreshold, 0, 'f', 2));
-        thresholdWidget.statusLabel->setStyleSheet("color: blue; font-size: 12px;");
+        thresholdWidget.statusLabel->setStyleSheet("color: black; font-size: 12px;");
     }
 }
 

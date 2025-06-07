@@ -673,13 +673,13 @@ double DeviceModel::calculateTargetSonarEquation(int sonarID, const TargetData& 
 
 
 
-    // ############# 步骤1：计算频谱累加求和 #############
-    double propagatedSum = calculateSpectrumSum(targetCachePropagatedSpectrum.propagatedSpectrum);     // |阵元谱级|
-    double platformSum = calculateSpectrumSum(targetCachePlatformSpectrumVector->second);                  // |平台背景|
-    double environmentSum = calculateSpectrumSum(targetCacheEnvironmentSpectrumVector->second);            // |海洋噪声|
+    // ############# 步骤1：根据声纳类型计算对应频率范围的频谱累加求和 #############
+     double propagatedSum = calculateSpectrumSumByFreqRange(targetCachePropagatedSpectrum.propagatedSpectrum, sonarID);     // |阵元谱级|
+     double platformSum = calculateSpectrumSumByFreqRange(targetCachePlatformSpectrumVector->second, sonarID);                  // |平台背景|
+     double environmentSum = calculateSpectrumSumByFreqRange(targetCacheEnvironmentSpectrumVector->second, sonarID);            // |海洋噪声|
 
-    LOG_INFOF("Spectrum sums >>>>>> propagated:%.2f, platform:%.2f, environment:%.2f",
-                 propagatedSum, platformSum, environmentSum);
+     LOG_INFOF("Spectrum sums (frequency range filtered) >>>>>> propagated:%.2f, platform:%.2f, environment:%.2f",
+                  propagatedSum, platformSum, environmentSum);
 
     // ############# 步骤2：计算平方值 #############
     // 计算SL-TL-NL = 10lg |阵元谱级|^2/(|平台背景|^2+|海洋噪声|^2)
@@ -1286,4 +1286,95 @@ float DeviceModel::getSonarMaxDisplayRange(int sonarID) const
 std::map<int, float> DeviceModel::getAllSonarMaxDisplayRanges() const
 {
     return m_sonarMaxDisplayRanges;
+}
+
+
+
+
+
+int DeviceModel::getSpectrumIndexFromFrequency(int frequency_hz)
+{
+    if (frequency_hz < 10) {
+        return 0;  // 最小频率为10Hz
+    }
+
+    if (frequency_hz <= 10000) {
+        // 10Hz-10kHz范围：每2Hz一个点
+        // 索引 = (频率 - 10) / 2
+        return (frequency_hz - 10) / 2;
+    } else if (frequency_hz <= 40000) {
+        // 10kHz-40kHz范围：每100Hz一个点
+        // 前面10Hz-10kHz有4995个点，然后从10kHz开始每100Hz一个点
+        int base_index = 4995;  // 10Hz-10kHz的点数
+        return base_index + (frequency_hz - 10000) / 100;
+    } else {
+        // 超过40kHz的频率，返回最大索引
+        return SPECTRUM_DATA_SIZE - 1;
+    }
+}
+
+double DeviceModel::calculateSpectrumSumByFreqRange(const std::vector<float>& spectrum, int sonarID)
+{
+    if (spectrum.empty() || spectrum.size() != SPECTRUM_DATA_SIZE) {
+        LOG_WARNF("Invalid spectrum data size: %zu, expected: %d", spectrum.size(), SPECTRUM_DATA_SIZE);
+        return 0.0;
+    }
+
+    int start_freq_hz, end_freq_hz;
+
+    // 根据声纳ID确定有效频率范围
+    switch (sonarID) {
+        case 0:  // 艏端声纳：500Hz-7500Hz
+            start_freq_hz = 500;
+            end_freq_hz = 7500;
+            break;
+
+        case 1:  // 舷侧声纳：400Hz-3200Hz
+            start_freq_hz = 400;
+            end_freq_hz = 3200;
+            break;
+
+        case 2:  // 粗拖声纳：47Hz-750Hz (从48Hz开始，因为47是奇数)
+            start_freq_hz = 48;  // 从48Hz开始
+            end_freq_hz = 750;
+            break;
+
+        case 3:  // 细拖声纳：10Hz-500Hz
+            start_freq_hz = 10;
+            end_freq_hz = 500;
+            break;
+
+        default:
+            LOG_WARNF("Unknown sonar ID: %d, using full spectrum", sonarID);
+            return calculateSpectrumSum(spectrum);  // 使用原始的全频谱求和
+    }
+
+    // 计算对应的数组索引范围
+    int start_index = getSpectrumIndexFromFrequency(start_freq_hz);
+    int end_index = getSpectrumIndexFromFrequency(end_freq_hz);
+
+    // 确保索引在有效范围内
+    start_index = std::max(0, start_index);
+    end_index = std::min(static_cast<int>(spectrum.size()) - 1, end_index);
+
+    if (start_index > end_index) {
+        LOG_WARNF("Invalid frequency range for sonar %d: start_index=%d, end_index=%d",
+                  sonarID, start_index, end_index);
+        return 0.0;
+    }
+
+    // 计算指定范围内的频谱求和
+    double sum = 0.0;
+    for (int i = start_index; i <= end_index; i++) {
+        sum += static_cast<double>(spectrum[i]);
+    }
+
+    int freq_count = end_index - start_index + 1;
+    const char* sonar_names[] = {"艏端", "舷侧", "粗拖", "细拖"};
+
+    LOG_INFOF("声纳%d(%s) 频率范围: %dHz-%dHz, 索引范围: %d-%d, 频率点数: %d, 累加和: %.2f",
+              sonarID, sonar_names[sonarID], start_freq_hz, end_freq_hz,
+              start_index, end_index, freq_count, sum);
+
+    return sum;
 }

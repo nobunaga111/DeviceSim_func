@@ -250,6 +250,24 @@ private:
       */
      std::pair<float, float> getRelativeSonarAngleRange(int sonarID);
 
+
+     /**
+      * @brief 根据声纳类型和频率范围计算频谱部分求和
+      * @param spectrum 频谱数据
+      * @param sonarID 声纳ID (0:艏端, 1:舷侧, 2:粗拖, 3:细拖)
+      * @return 指定频率范围内的累加求和值
+      */
+     double calculateSpectrumSumByFreqRange(const std::vector<float>& spectrum, int sonarID);
+
+     /**
+      * @brief 根据频率值计算在频谱数组中的索引
+      * @param frequency_hz 频率值(Hz)
+      * @return 对应的数组索引
+      */
+     int getSpectrumIndexFromFrequency(int frequency_hz);
+
+
+
     // *** 多目标声纳方程计算相关的私有方法 ***
 
     // 单个目标的数据结构
@@ -449,5 +467,7 @@ private:
     };
 
 };
+
+
 
 #endif // DEVICEMODEL_H
