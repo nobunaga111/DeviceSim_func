@@ -527,7 +527,7 @@ void MainWindow::onTargetPlatformsUpdated(const QVector<ChartPlatform>& targetPl
     m_targetCountLabel->setText(QString::number(targetPlatforms.size()));
     m_targetCountLabel->setStyleSheet(
         targetPlatforms.isEmpty() ? "color: gray;" :
-        targetPlatforms.size() > 8 ? "color: red; font-weight: bold;" : "color: white; font-weight: bold;"
+        targetPlatforms.size() > 8 ? "color: red; font-weight: bold;" : "color: black; font-weight: bold;"
     );
 
     // 无论目标列表是否为空，都发送数据

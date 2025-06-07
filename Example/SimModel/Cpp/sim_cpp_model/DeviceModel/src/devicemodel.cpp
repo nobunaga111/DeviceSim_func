@@ -667,19 +667,16 @@ double DeviceModel::calculateTargetSonarEquation(int sonarID, const TargetData& 
     }
 
     LOG_INFOF("Sonar %d data check passed - platform spectrum size:%zu, environment spectrum size:%zu, target spectrum size:%zu",
-              sonarID, targetCachePlatformSpectrumVector->second.size(), targetCacheEnvironmentSpectrumVector->second.size(), targetCachePropagatedSpectrum.propagatedSpectrum.size());
-
-
-
-
+              sonarID, targetCachePlatformSpectrumVector->second.size(),
+              targetCacheEnvironmentSpectrumVector->second.size(), targetCachePropagatedSpectrum.propagatedSpectrum.size());
 
     // ############# 步骤1：根据声纳类型计算对应频率范围的频谱累加求和 #############
-     double propagatedSum = calculateSpectrumSumByFreqRange(targetCachePropagatedSpectrum.propagatedSpectrum, sonarID);     // |阵元谱级|
-     double platformSum = calculateSpectrumSumByFreqRange(targetCachePlatformSpectrumVector->second, sonarID);                  // |平台背景|
-     double environmentSum = calculateSpectrumSumByFreqRange(targetCacheEnvironmentSpectrumVector->second, sonarID);            // |海洋噪声|
+    double propagatedSum = calculateSpectrumSumByFreqRange(targetCachePropagatedSpectrum.propagatedSpectrum, sonarID);     // |阵元谱级|
+    double platformSum = calculateSpectrumSumByFreqRange(targetCachePlatformSpectrumVector->second, sonarID);                  // |平台背景|
+    double environmentSum = calculateSpectrumSumByFreqRange(targetCacheEnvironmentSpectrumVector->second, sonarID);            // |海洋噪声|
 
-     LOG_INFOF("Spectrum sums (frequency range filtered) >>>>>> propagated:%.2f, platform:%.2f, environment:%.2f",
-                  propagatedSum, platformSum, environmentSum);
+    LOG_INFOF("Spectrum sums (frequency range filtered) >>>>>> propagated:%.2f, platform:%.2f, environment:%.2f",
+              propagatedSum, platformSum, environmentSum);
 
     // ############# 步骤2：计算平方值 #############
     // 计算SL-TL-NL = 10lg |阵元谱级|^2/(|平台背景|^2+|海洋噪声|^2)
@@ -693,15 +690,16 @@ double DeviceModel::calculateTargetSonarEquation(int sonarID, const TargetData& 
 
     if (denominator > 0.0 && propagatedSquare > 0.0) {
         sl_tl_nl = 10.0 * log10(propagatedSquare / denominator);  // 10lg(信号/噪声)
-
     } else {
         LOG_WARNF("Invalid spectrum data for sonar %d target %d >>>>>> propagated=%.2f, platform=%.2f, environment=%.2f",
                   sonarID, targetCachePropagatedSpectrum.targetId, propagatedSum, platformSum, environmentSum);
         return 0.0;
     }
 
-    // ############# 步骤4：计算DI值 #############
-    double di = calculateDI(sonarID);
+    // ############# 步骤4：计算动态频率并计算DI值 #############
+    // 这里是关键修改：根据传播频谱动态计算频率
+    double dynamicFrequency = calculateMedianFrequencyFromSpectrum(targetCachePropagatedSpectrum.propagatedSpectrum, sonarID);
+    double di = calculateDynamicDI(sonarID, dynamicFrequency);
 
     // ############# 步骤5：计算最终结果 X = SL-TL-NL + DI #############
     double result = sl_tl_nl + di;
@@ -709,8 +707,8 @@ double DeviceModel::calculateTargetSonarEquation(int sonarID, const TargetData& 
     // 获取当前声纳的探测阈值
     double threshold = getEffectiveThreshold(sonarID);
 
-    LOG_DEBUGF("声纳%d目标%d方程计算: X=%.2f, 阈值=%.2f, 可探测=%s",
-               sonarID, targetCachePropagatedSpectrum.targetId, result, threshold,
+    LOG_DEBUGF("声纳%d目标%d方程计算: SL-TL-NL=%.2f, 动态频率=%.3fkHz, DI=%.2f, X=%.2f, 阈值=%.2f, 可探测=%s",
+               sonarID, targetCachePropagatedSpectrum.targetId, sl_tl_nl, dynamicFrequency, di, result, threshold,
                (result > threshold) ? "是" : "否");
 
     return result;
@@ -1377,4 +1375,164 @@ double DeviceModel::calculateSpectrumSumByFreqRange(const std::vector<float>& sp
               start_index, end_index, freq_count, sum);
 
     return sum;
+}
+
+
+
+
+
+
+
+
+
+
+double DeviceModel::calculateMedianFrequencyFromSpectrum(const std::vector<float>& spectrum, int sonarID)
+{
+    if (spectrum.empty() || spectrum.size() != SPECTRUM_DATA_SIZE) {
+        LOG_WARNF("Invalid spectrum data size: %zu, expected: %d", spectrum.size(), SPECTRUM_DATA_SIZE);
+        return 0.0;
+    }
+
+    int start_freq_hz, end_freq_hz;
+
+    // 根据声纳ID确定有效频率范围
+    switch (sonarID) {
+        case 0:  // 艏端声纳：500Hz-7500Hz
+            start_freq_hz = 500;
+            end_freq_hz = 7500;
+            break;
+        case 1:  // 舷侧声纳：400Hz-3200Hz
+            start_freq_hz = 400;
+            end_freq_hz = 3200;
+            break;
+        case 2:  // 粗拖声纳：48Hz-750Hz
+            start_freq_hz = 48;
+            end_freq_hz = 750;
+            break;
+        case 3:  // 细拖声纳：10Hz-500Hz
+            start_freq_hz = 10;
+            end_freq_hz = 500;
+            break;
+        default:
+            LOG_WARNF("Unknown sonar ID: %d", sonarID);
+            return 0.0;
+    }
+
+    // 计算对应的数组索引范围
+    int start_index = getSpectrumIndexFromFrequency(start_freq_hz);
+    int end_index = getSpectrumIndexFromFrequency(end_freq_hz);
+
+    // 确保索引在有效范围内
+    start_index = std::max(0, start_index);
+    end_index = std::min(static_cast<int>(spectrum.size()) - 1, end_index);
+
+    if (start_index > end_index) {
+        LOG_WARNF("Invalid frequency range for sonar %d: start_index=%d, end_index=%d",
+                  sonarID, start_index, end_index);
+        return 0.0;
+    }
+
+    // 计算总的频谱能量
+    double totalEnergy = 0.0;
+    for (int i = start_index; i <= end_index; i++) {
+        totalEnergy += static_cast<double>(spectrum[i]);
+    }
+
+    if (totalEnergy <= 0.0) {
+        LOG_WARNF("Zero total energy in frequency range for sonar %d", sonarID);
+        return 0.0;
+    }
+
+    // 寻找中位数频率：累积能量达到总能量一半的频率
+    double halfEnergy = totalEnergy / 2.0;
+    double cumulativeEnergy = 0.0;
+    int medianIndex = start_index;
+
+    for (int i = start_index; i <= end_index; i++) {
+        cumulativeEnergy += static_cast<double>(spectrum[i]);
+        if (cumulativeEnergy >= halfEnergy) {
+            medianIndex = i;
+            break;
+        }
+    }
+
+    // 将索引转换回频率值(Hz)
+    double medianFreq_hz = 0.0;
+    if (medianIndex < 4995) {
+        // 10Hz-10kHz范围：每2Hz一个点
+        medianFreq_hz = 10.0 + medianIndex * 2.0;
+    } else {
+        // 10kHz-40kHz范围：每100Hz一个点
+        medianFreq_hz = 10000.0 + (medianIndex - 4995) * 100.0;
+    }
+
+    // 转换为kHz
+    double medianFreq_khz = medianFreq_hz / 1000.0;
+
+    const char* sonar_names[] = {"艏端", "舷侧", "粗拖", "细拖"};
+    LOG_INFOF("声纳%d(%s) 中位数频率计算: 范围%dHz-%dHz, 索引%d-%d, 中位数索引=%d, 频率=%.3fkHz",
+              sonarID, sonar_names[sonarID], start_freq_hz, end_freq_hz,
+              start_index, end_index, medianIndex, medianFreq_khz);
+
+    LOG_INFOF("!!!!!medianFreq_khz : %.3f", medianFreq_khz);
+    return medianFreq_khz;
+}
+
+double DeviceModel::calculateDynamicDI(int sonarID, double dynamicFrequency)
+{
+    // 检查声纳ID是否有效
+    if (m_diParameters.find(sonarID) == m_diParameters.end()) {
+        LOG_WARNF("No DI parameters found for sonar %d, using default", sonarID);
+        return 9.5;  // 默认值
+    }
+
+    const DIParameters& params = m_diParameters[sonarID];
+
+    // 根据声纳类型设置频率上限并应用限制
+    double frequency = dynamicFrequency;
+    double maxFrequency = 0.0;
+
+    switch (sonarID) {
+        case 0:  // 艏端声纳：最大5kHz
+            maxFrequency = 5.0;
+            break;
+        case 1:  // 舷侧声纳：最大3kHz
+            maxFrequency = 3.0;
+            break;
+        case 2:  // 粗拖声纳：最大0.5kHz
+            maxFrequency = 0.5;
+            break;
+        case 3:  // 细拖声纳：最大0.5kHz
+            maxFrequency = 0.5;
+            break;
+        default:
+            maxFrequency = MAX_FREQUENCY_KHZ;
+            break;
+    }
+
+    // 应用频率限制
+    frequency = std::min(frequency, maxFrequency);
+
+    // 根据声纳类型使用不同的计算公式
+    double multiplier;
+    if (sonarID == 0 || sonarID == 1) {
+        // 艏端声纳(ID=0)和舷侧声纳(ID=1): DI = 20lg(f) + offset
+        multiplier = 20.0;
+    } else if (sonarID == 2 || sonarID == 3) {
+        // 粗拖声纳(ID=2)和细拖声纳(ID=3): DI = 10lg(f) + offset
+        multiplier = 10.0;
+    } else {
+        // 其他声纳使用默认20倍系数
+        multiplier = 20.0;
+    }
+
+    if (frequency > 0.0) {
+        double di = multiplier * log10(frequency) + params.offset;
+        const char* sonar_names[] = {"艏端", "舷侧", "粗拖", "细拖"};
+        LOG_DEBUGF("声纳%d(%s)动态DI计算: 原始频率=%.3fkHz, 限制后频率=%.3fkHz, 最大频率=%.1fkHz, 倍数=%.0f, 偏移=%.2f, DI=%.2f",
+                   sonarID, sonar_names[sonarID], dynamicFrequency, frequency, maxFrequency, multiplier, params.offset, di);
+        return di;
+    } else {
+        return params.offset;  // 频率为0时只返回偏移量
+    }
 }

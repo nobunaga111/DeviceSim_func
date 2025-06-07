@@ -268,6 +268,24 @@ private:
 
 
 
+
+
+     /**
+          * @brief 计算频谱范围内的中位数频率
+          * @param spectrum 频谱数据
+          * @param sonarID 声纳ID
+          * @return 中位数频率(kHz)
+          */
+         double calculateMedianFrequencyFromSpectrum(const std::vector<float>& spectrum, int sonarID);
+
+         /**
+          * @brief 计算动态DI值，使用传播频谱计算的频率
+          * @param sonarID 声纳ID
+          * @param dynamicFrequency 动态计算的频率(kHz)
+          * @return DI值
+          */
+         double calculateDynamicDI(int sonarID, double dynamicFrequency);
+
     // *** 多目标声纳方程计算相关的私有方法 ***
 
     // 单个目标的数据结构
@@ -450,8 +468,8 @@ private:
 
 
     int64 m_lastPropagatedSoundLogTime = 0;  // 上次打印传播声日志的时间
-    int64 m_lastEnvironmentNoiseLogTime = 0;  // 上次打印环境噪声日志的时间  // 新增
-    int64 m_lastPlatformSelfSoundLogTime = 0; // 上次打印平台自噪声日志的时间  // 新增
+    int64 m_lastEnvironmentNoiseLogTime = 0;  // 上次打印环境噪声日志的时间
+    int64 m_lastPlatformSelfSoundLogTime = 0; // 上次打印平台自噪声日志的时间
     static const int64 PROPAGATED_SOUND_LOG_INTERVAL = 5000; // 5秒打印间隔
 
 
