@@ -53,10 +53,10 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
     // 1 初始化声纳范围配置的默认值
-    m_sonarRangeConfigs[0] = SonarRangeConfig{0, "艏端声纳", 40000.0f, -45.0f, 45.0f, 0.0f, 0.0f, false};
-    m_sonarRangeConfigs[1] = SonarRangeConfig{1, "舷侧声纳", 33000.0f, 45.0f, 135.0f, -135.0f, -45.0f, true};
-    m_sonarRangeConfigs[2] = SonarRangeConfig{2, "粗拖声纳", 45000.0f, 135.0f, 225.0f, 0.0f, 0.0f, false};
-    m_sonarRangeConfigs[3] = SonarRangeConfig{3, "细拖声纳", 80000.0f, 120.0f, 240.0f, 0.0f, 0.0f, false};
+    m_sonarRangeConfigs[0] = SonarRangeConfig{0, "艏端声纳", 38000.0f, -45.0f, 45.0f, 0.0f, 0.0f, false};
+    m_sonarRangeConfigs[1] = SonarRangeConfig{1, "舷侧声纳", 30000.0f, 45.0f, 135.0f, -135.0f, -45.0f, true};
+    m_sonarRangeConfigs[2] = SonarRangeConfig{2, "粗拖声纳", 40000.0f, 135.0f, 225.0f, 0.0f, 0.0f, false};
+    m_sonarRangeConfigs[3] = SonarRangeConfig{3, "细拖声纳", 60000.0f, 120.0f, 240.0f, 0.0f, 0.0f, false};
 
     // 2 *** 初始化界面，确保UI组件都被创建 ***
     initializeUI();
@@ -846,8 +846,13 @@ CMsg_PropagatedContinuousSoundListStruct MainWindow::createPropagatedSoundData(c
 
         // 生成模拟的频谱数据
         // 根据距离调整信号强度：距离越远，信号越弱
-        float baseSignalLevel = 80.0f - static_cast<float>(distance / 1000.0f); // 每公里衰减1dB
-        baseSignalLevel = std::max(40.0f, std::min(85.0f, baseSignalLevel)); // 限制在40-85dB范围
+//        float baseSignalLevel = 80.0f - static_cast<float>(distance / 1000.0f); // 每公里衰减1dB
+        // 使用球面扩散损失：TL = 20 * log10(R)，R单位为米
+        float propagationLoss = 20.0f * log10f(distance);
+        float baseSignalLevel = 120.0f - propagationLoss; // 假设源级为120dB
+        // 允许更大的动态范围或移除下限
+//        baseSignalLevel = std::max(40.0f, std::min(85.0f, baseSignalLevel)); // 限制在40-85dB范围
+        baseSignalLevel = std::max(10.0f, std::min(120.0f, baseSignalLevel));
 
         for (int i = 0; i < 5296; i++) {
             // 一些随机变化和频率特性
