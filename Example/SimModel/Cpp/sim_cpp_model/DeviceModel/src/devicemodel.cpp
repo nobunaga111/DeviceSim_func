@@ -639,6 +639,9 @@ void DeviceModel::performMultiTargetSonarEquationCalculation()
         m_multiTargetCache.multiTargetEquationResults[sonarID] = sonarResults;
 
         LOG_INFOF("Sonar %d completed calculation for %zu targets", sonarID, sonarResults.size());
+
+        // 发送被动声呐探测结果
+        sendPassiveSonarResultsInStep();
     }
 }
 double DeviceModel::calculateTargetSonarEquation(int sonarID, const TargetData& targetCachePropagatedSpectrum)
@@ -1535,4 +1538,229 @@ double DeviceModel::calculateDynamicDI(int sonarID, double dynamicFrequency)
     } else {
         return params.offset;  // 频率为0时只返回偏移量
     }
+}
+
+
+
+
+
+
+
+
+/**
+ * @brief 组装并发送被动声呐探测结果
+ * @param sonarID 声呐编号 (0:艏端, 1:舷侧, 2:粗拖, 3:细拖)
+ * @param detectionThreshold 探测阈值 X
+ * @param currentTime 当前时间戳
+ */
+void DeviceModel::assembleAndSendPassiveSonarResult(int sonarID, double detectionThreshold, int64 currentTime)
+{
+    if (!m_agent) {
+        LOG_WARN("Agent is null, cannot send passive sonar result");
+        return;
+    }
+
+    // 验证声呐ID有效性
+    if (sonarID < 0 || sonarID >= 4) {
+        LOG_WARNF("Invalid sonar ID: %d", sonarID);
+        return;
+    }
+
+    // 检查声呐是否启用
+    auto stateIt = m_sonarStates.find(sonarID);
+    if (stateIt == m_sonarStates.end() ||
+        !stateIt->second.arrayWorkingState ||
+        !stateIt->second.passiveWorkingState) {
+        LOG_INFOF("Sonar %d is disabled, not sending result", sonarID);
+        return;
+    }
+
+    // 创建被动声呐结果结构体
+    CMsg_PassiveSonarResultStruct passiveSonarResult;
+
+    // 设置声呐ID (转换为1-7的编号，项目中使用1开始编号)
+    passiveSonarResult.sonarID = sonarID + 1;  // 0->1, 1->2, 2->3, 3->4
+
+    // 获取该声呐的计算结果
+    auto resultIt = m_multiTargetCache.multiTargetEquationResults.find(sonarID);
+    if (resultIt == m_multiTargetCache.multiTargetEquationResults.end()) {
+        LOG_INFOF("No calculation results for sonar %d", sonarID);
+        passiveSonarResult.detectionNumber = 0;
+    } else {
+        const auto& targetResults = resultIt->second;
+
+        // 统计可探测的目标
+        std::vector<TargetEquationResult> detectedTargets;
+        std::vector<TargetEquationResult> validTargets;  // 用于跟踪的目标
+
+        for (const auto& result : targetResults) {
+            // 检查目标是否在声呐有效角度范围内
+            if (!isTargetInSonarRange(sonarID, result.targetBearing, result.targetDistance)) {
+                continue;
+            }
+
+            // 根据阈值判断是否可探测
+            if (result.equationResult > detectionThreshold) {
+                detectedTargets.push_back(result);
+
+                // SNR较高的目标可以进行跟踪（这里用简单规则：X值高于阈值5dB以上）
+                if (result.equationResult > (detectionThreshold + 5.0)) {
+                    validTargets.push_back(result);
+                }
+            }
+        }
+
+        // 设置检测目标数量
+        passiveSonarResult.detectionNumber = static_cast<int>(detectedTargets.size());
+
+        // 组装检测结果
+        for (size_t i = 0; i < detectedTargets.size() && i < 100; i++) {  // 最多100个目标
+            C_PassiveSonarDetectionResult detection;
+
+            // 方位角估计值（阵坐标系）
+            detection.detectionDirArray = detectedTargets[i].targetBearing;
+
+            // 方位角估计值（大地坐标系）
+            // 转换为0-360度范围
+            float groundBearing = detectedTargets[i].targetBearing + m_platformMotion.rotation;
+            while (groundBearing < 0) groundBearing += 360.0f;
+            while (groundBearing >= 360) groundBearing -= 360.0f;
+            detection.detectionDirGroud = groundBearing;
+
+            passiveSonarResult.PassiveSonarDetectionResult.push_back(detection);
+        }
+
+        // 组装跟踪结果
+        for (size_t i = 0; i < validTargets.size() && i < 50; i++) {  // 最多50个跟踪目标
+            C_PassiveSonarTrackingResult tracking;
+
+            // 跟踪批次号
+            tracking.trackingID = static_cast<int>(i + 1);
+
+            // 信噪比（基于声呐方程结果估算）
+            tracking.SNR = std::min(50.0f, std::max(-50.0f,
+                static_cast<float>(validTargets[i].equationResult - detectionThreshold)));
+
+            // 跟踪时长（模拟数据，实际应该是累积时间）
+            tracking.trackingStep = std::min(1000, static_cast<int>(currentTime / 1000) % 1000);
+
+            // 方位角估计值（阵坐标系）
+            tracking.trackingDirArray = validTargets[i].targetBearing;
+
+            // 方位角估计值（大地坐标系）
+            float groundBearing = validTargets[i].targetBearing + m_platformMotion.rotation;
+            while (groundBearing < 0) groundBearing += 360.0f;
+            while (groundBearing >= 360) groundBearing -= 360.0f;
+            tracking.trackingDirGroud = groundBearing;
+
+            // 目标识别结果（基于SNR和距离的简单规则）
+            if (tracking.SNR > 30.0f) {
+                tracking.recognitionResult = 2;  // 潜艇
+                tracking.recognitionPercent[1] = 0.8f;  // 潜艇置信度
+            } else if (tracking.SNR > 20.0f) {
+                tracking.recognitionResult = 1;  // 水面舰
+                tracking.recognitionPercent[0] = 0.7f;  // 水面舰置信度
+            } else {
+                tracking.recognitionResult = 0;  // 未知
+                tracking.recognitionPercent[4] = 0.5f;  // 未知置信度
+            }
+
+            // 频谱数据填充（这里使用模拟数据，实际应该从目标频谱获取）
+            fillMockSpectrumData(tracking.spectumData, validTargets[i].targetId);
+
+            passiveSonarResult.PassiveSonarTrackingResult.push_back(tracking);
+        }
+    }
+
+    // 创建仿真消息
+    CSimMessage simMessage;
+    simMessage.dataFormat = STRUCT;
+    simMessage.time = currentTime;
+    simMessage.sender = m_agent->getPlatformEntity()->id;
+    simMessage.senderComponentId = 1;
+    simMessage.receiver = 0;  // 广播
+    simMessage.data = &passiveSonarResult;
+    simMessage.length = sizeof(passiveSonarResult);
+
+    // 设置消息主题
+    memset(simMessage.topic, 0, sizeof(simMessage.topic));
+    strncpy(simMessage.topic, MSG_PassiveSonarResult_Topic, strlen(MSG_PassiveSonarResult_Topic));
+
+    // 发送消息
+    m_agent->sendMessage(&simMessage);
+
+    LOG_INFOF("Sent passive sonar result for sonar %d: %d detections, %d trackings",
+              sonarID, passiveSonarResult.detectionNumber,
+              static_cast<int>(passiveSonarResult.PassiveSonarTrackingResult.size()));
+}
+
+/**
+ * @brief 填充模拟频谱数据
+ * @param spectrumData 频谱数据数组
+ * @param targetId 目标ID
+ */
+void DeviceModel::fillMockSpectrumData(float spectrumData[5296], int targetId)
+{
+    // 清零频谱数据
+    memset(spectrumData, 0, sizeof(float) * 5296);
+
+    // 基于目标ID生成特征频谱
+    int baseFreq = (targetId % 10) * 100 + 500;  // 500-1400Hz基频
+    float amplitude = 100.0f + (targetId % 50);  // 基础幅度
+
+    for (int i = 0; i < 5296; i++) {
+        float freq = i * 10000.0f / 5296.0f;  // 0-10kHz频率范围
+
+        // 在基频附近生成峰值
+        if (freq >= baseFreq - 50 && freq <= baseFreq + 50) {
+            float diff = std::abs(freq - baseFreq);
+            spectrumData[i] = amplitude * exp(-diff * diff / (2 * 25 * 25));  // 高斯分布
+        }
+
+        // 添加一些谐波
+        float harmonic2 = baseFreq * 2;
+        if (freq >= harmonic2 - 25 && freq <= harmonic2 + 25) {
+            float diff = std::abs(freq - harmonic2);
+            spectrumData[i] += amplitude * 0.3f * exp(-diff * diff / (2 * 15 * 15));
+        }
+
+        // 添加背景噪声
+        spectrumData[i] += (rand() % 20 - 10) * 0.1f;
+    }
+}
+
+/**
+ * @brief 批量发送所有声呐的被动探测结果
+ * @param detectionThresholds 各声呐的探测阈值映射
+ * @param currentTime 当前时间戳
+ */
+void DeviceModel::sendAllPassiveSonarResults(const std::map<int, double>& detectionThresholds, int64 currentTime)
+{
+    for (int sonarID = 0; sonarID < 4; sonarID++) {
+        double threshold = 33.0;  // 默认阈值
+
+        auto thresholdIt = detectionThresholds.find(sonarID);
+        if (thresholdIt != detectionThresholds.end()) {
+            threshold = thresholdIt->second;
+        } else {
+            // 使用配置的阈值
+            threshold = getEffectiveThreshold(sonarID);
+        }
+
+        assembleAndSendPassiveSonarResult(sonarID, threshold, currentTime);
+    }
+}
+
+/**
+ * @brief 在step函数中调用的简化发送方法
+ */
+void DeviceModel::sendPassiveSonarResultsInStep()
+{
+    // 使用当前配置的阈值发送所有声呐结果
+    std::map<int, double> currentThresholds;
+    for (int sonarID = 0; sonarID < 4; sonarID++) {
+        currentThresholds[sonarID] = getEffectiveThreshold(sonarID);
+    }
+
+    sendAllPassiveSonarResults(currentThresholds, curTime);
 }

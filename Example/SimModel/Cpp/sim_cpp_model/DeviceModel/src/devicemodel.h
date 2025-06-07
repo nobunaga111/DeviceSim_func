@@ -11,6 +11,10 @@
 #include <random>
 #include "common/DMLogger.h"
 
+#include "DeviceTestInOut.h"
+#include <cstring>
+#include <cmath>
+#include <algorithm>
 
 // 前向声明
 //class QMap;
@@ -217,6 +221,26 @@ public:
 
 
 
+   /**
+    * @brief 组装并发送被动声呐探测结果
+    * @param sonarID 声呐编号 (0:艏端, 1:舷侧, 2:粗拖, 3:细拖)
+    * @param detectionThreshold 探测阈值 X
+    * @param currentTime 当前时间戳
+    */
+   void assembleAndSendPassiveSonarResult(int sonarID, double detectionThreshold, int64 currentTime);
+
+   /**
+    * @brief 批量发送所有声呐的被动探测结果
+    * @param detectionThresholds 各声呐的探测阈值映射
+    * @param currentTime 当前时间戳
+    */
+   void sendAllPassiveSonarResults(const std::map<int, double>& detectionThresholds, int64 currentTime);
+
+   /**
+    * @brief 在step函数中调用的简化发送方法
+    */
+   void sendPassiveSonarResultsInStep();
+
 private:
     /**
      * @brief 处理声纳控制命令
@@ -285,6 +309,15 @@ private:
           * @return DI值
           */
          double calculateDynamicDI(int sonarID, double dynamicFrequency);
+
+
+         /**
+          * @brief 填充模拟频谱数据
+          * @param spectrumData 频谱数据数组
+          * @param targetId 目标ID
+          */
+         void fillMockSpectrumData(float spectrumData[5296], int targetId);
+
 
     // *** 多目标声纳方程计算相关的私有方法 ***
 
